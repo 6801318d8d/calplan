@@ -142,7 +142,7 @@ class CalendarRepository {
 
 		$events = [];
 		foreach ($icsByUri as $ics) {
-			foreach (IcalCodec::parseEvents($ics) as $event) {
+			foreach (IcalCodec::parseEvents($ics, $from, $until) as $event) {
 				$events[] = $event;
 			}
 		}

@@ -147,6 +147,43 @@ class IcalCodecTest extends TestCase {
 		$this->assertSame('TRANSPARENT', $events[0]->transp);
 	}
 
+	/** @param CalendarEvent[] $events */
+	private function utcStarts(array $events): array {
+		return array_map(fn ($e) => $e->start->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'), $events);
+	}
+
+	public function testParseEventsExpandsRecurringEventsInsideTheWindow(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:lunch\r\nSUMMARY:Lunch\r\n"
+			. "DTSTART:20261013T103000Z\r\nDTEND:20261013T113000Z\r\nRRULE:FREQ=DAILY\r\nEXDATE:20261017T103000Z\r\n"
+			. "END:VEVENT\r\nEND:VCALENDAR\r\n";
+		$from = new \DateTimeImmutable('2026-10-16 00:00:00', new \DateTimeZone('UTC'));
+		$until = new \DateTimeImmutable('2026-10-19 00:00:00', new \DateTimeZone('UTC'));
+		$events = IcalCodec::parseEvents($ics, $from, $until);
+		$this->assertSame(['2026-10-16 10:30', '2026-10-18 10:30'], $this->utcStarts($events));
+		$this->assertSame('2026-10-18 11:30', $events[1]->end->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i'));
+		$this->assertSame('Lunch', $events[1]->summary);
+	}
+
+	public function testParseEventsExpandsLocalTimeRecurrenceAcrossDstChange(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:lunch\r\n"
+			. "DTSTART;TZID=Europe/Rome:20261013T123000\r\nDTEND;TZID=Europe/Rome:20261013T133000\r\nRRULE:FREQ=DAILY\r\n"
+			. "END:VEVENT\r\nEND:VCALENDAR\r\n";
+		$from = new \DateTimeImmutable('2026-10-24 00:00:00', new \DateTimeZone('UTC'));
+		$until = new \DateTimeImmutable('2026-10-27 00:00:00', new \DateTimeZone('UTC'));
+		$events = IcalCodec::parseEvents($ics, $from, $until);
+		// 12:30 in Rome is 10:30 UTC in summer time and 11:30 UTC after 2026-10-25.
+		$this->assertSame(['2026-10-24 10:30', '2026-10-25 11:30', '2026-10-26 11:30'], $this->utcStarts($events));
+	}
+
+	public function testParseEventsWithoutWindowKeepsTheRecurringMaster(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:lunch\r\n"
+			. "DTSTART:20261013T103000Z\r\nDTEND:20261013T113000Z\r\nRRULE:FREQ=DAILY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+		$this->assertSame(['2026-10-13 10:30'], $this->utcStarts(IcalCodec::parseEvents($ics)));
+	}
+
 	public function testParseEventsReadsOrdinaryEventSummary(): void {
 		$this->requireSabre();
 		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:ev-title\r\nSUMMARY:Busy hold\r\nDTSTART:20260820T090000Z\r\nDTEND:20260820T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";

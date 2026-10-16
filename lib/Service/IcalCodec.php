@@ -101,12 +101,25 @@ class IcalCodec {
 	/**
 	 * Parse VEVENT components from an iCalendar blob into CalendarEvent objects.
 	 *
+	 * With a [$from, $until] window, recurring events (RRULE/RDATE) are
+	 * expanded into their occurrences inside it (EXDATEs and overridden
+	 * instances honoured): the stored VEVENT only carries the first
+	 * occurrence, so without expansion a daily lunch would count as busy on
+	 * its first date only.
+	 *
 	 * @return CalendarEvent[]
 	 */
-	public static function parseEvents(string $ics): array {
+	public static function parseEvents(string $ics, ?\DateTimeInterface $from = null, ?\DateTimeInterface $until = null): array {
 		$vcal = Reader::read($ics);
 		if (!($vcal instanceof VCalendar)) {
 			return [];
+		}
+		if ($from !== null && $until !== null && self::hasRecurringEvent($vcal)) {
+			try {
+				$vcal = $vcal->expand($from, $until);
+			} catch (\Throwable $_) {
+				// No instances in range, or too many: keep the unexpanded master.
+			}
 		}
 		$events = [];
 		foreach ($vcal->select('VEVENT') as $vevent) {
@@ -434,6 +447,15 @@ class IcalCodec {
 		$vevent->add('CATEGORIES', Defaults::SLOT_CATEGORY);
 		$vcal->add($vevent);
 		return $vcal->serialize();
+	}
+
+	private static function hasRecurringEvent(VCalendar $vcal): bool {
+		foreach ($vcal->select('VEVENT') as $vevent) {
+			if (isset($vevent->RRULE) || isset($vevent->RDATE)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static function stringProp(Component $comp, string $name): string {
