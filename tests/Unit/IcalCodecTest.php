@@ -38,7 +38,7 @@ class IcalCodecTest extends TestCase {
 		$tasks = IcalCodec::parseTasks($this->vtodo("DURATION:PT45M\r\n"));
 		$this->assertCount(1, $tasks);
 		$this->assertSame(45, $tasks[0]->estimatedMinutes);
-		$this->true($tasks[0]->autoSchedule);
+		$this->assertTrue($tasks[0]->autoSchedule);
 	}
 
 	public function testParseTasksDefaultsEstimateWhenNoDuration(): void {
@@ -79,7 +79,7 @@ class IcalCodecTest extends TestCase {
 	}
 	public function testParseTasksReadsMirroredFields(): void {
 		$this->requireSabre();
-		$ics = $this->vtodo('DESCRIPTION:do the thing\r\nLOCATION:Desk\r\nURL:https://ex.test/t\r\nPERCENT-COMPLETE:60\r\n');
+		$ics = $this->vtodo("DESCRIPTION:do the thing\r\nLOCATION:Desk\r\nURL:https://ex.test/t\r\nPERCENT-COMPLETE:60\r\n");
 		$tasks = IcalCodec::parseTasks($ics);
 		$this->assertCount(1, $tasks);
 		$this->assertSame('do the thing', $tasks[0]->description);
@@ -114,7 +114,8 @@ class IcalCodecTest extends TestCase {
 		$this->assertStringContainsString('SUMMARY:Do a thing', $ics);
 		$this->assertStringContainsString('PRIORITY:3', $ics);
 		$this->assertStringContainsString('LOCATION:Desk', $ics);
-		$this->assertStringContainsString('URL:https://ex.test/t', $ics);
+		// Sabre serializes URL with the (redundant, valid) VALUE=URI parameter.
+		$this->assertMatchesRegularExpression('/^URL(;VALUE=URI)?:https:\/\/ex\.test\/t\r?$/m', $ics);
 		$this->assertStringContainsString('DESCRIPTION:60% - notes', $ics);
 	}
 
