@@ -170,7 +170,9 @@ ranked as if due ten years ahead.
 Blocks that have already started stay as they are while their task is still to
 be scheduled (until the expired-block review releases them), hold their time and
 count against their day's limits. So does block time spent today by blocks that
-were removed or moved (remembered per day).
+were removed or moved (remembered per day). A started block that a real event
+now overlaps did not happen: it is neither kept nor reviewed, its task is
+planned again from now, and only its time before the event counts as spent.
 
 Each task then takes the earliest free interval that satisfies:
 

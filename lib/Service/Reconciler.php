@@ -38,11 +38,14 @@ class Reconciler {
 	 *
 	 * A block that has already started is kept as it is while its task is
 	 * still to be scheduled - unless the task is in *released*: the
-	 * expired-block review of this run handled it, so it is planned anew. The
-	 * time of started blocks that go away (a completed task's, a released
-	 * one's) still counts against today's limits, as does *priorSpent*, the
-	 * time of blocks removed earlier today; each Reconciliation lists in
-	 * $spent the started blocks it removes, for the caller to remember.
+	 * expired-block review of this run handled it, so it is planned anew - or
+	 * a real event now overlaps it: it did not happen as planned, so its task
+	 * is planned anew from now. The time of started blocks that go away (a
+	 * completed task's, a released one's; for an overlapped one, only its time
+	 * before the event) still counts against today's limits, as does
+	 * *priorSpent*, the time of blocks removed earlier today; each
+	 * Reconciliation lists in $spent the started blocks it removes, for the
+	 * caller to remember.
 	 *
 	 * @param array<string, array{tasks: Task[], events: CalendarEvent[]}> $plans keyed by calendar
 	 * @param CalendarEvent[] $allEvents every calendar's events (the busy time)
@@ -67,11 +70,16 @@ class Reconciler {
 				if ($event->start > $now) {
 					continue;
 				}
-				if (isset($scheduled[$taskUid]) && !isset($released[$taskUid])) {
+				$takenAt = self::takenAt($event, $allEvents);
+				if ($takenAt === null && isset($scheduled[$taskUid]) && !isset($released[$taskUid])) {
 					$pinned[$taskUid] = new Slot($event->start, $event->end);
 				} elseif ($event->start->setTimezone($now->getTimezone())->format('Y-m-d') === $today) {
-					// Leaving: what of it lies before now was spent today.
+					// Leaving: what of it lies before now, and before an event
+					// that took its time, was spent today.
 					$until = $event->end < $now ? $event->end : $now;
+					if ($takenAt !== null && $takenAt < $until) {
+						$until = $takenAt;
+					}
 					$spentNow[$key][] = [
 						'task' => $taskUid,
 						'start' => $event->start->getTimestamp(),
@@ -94,6 +102,28 @@ class Reconciler {
 			$out[$key]->spent = $spentNow[$key];
 		}
 		return $out;
+	}
+
+	/**
+	 * The first moment of *block* that a real event (opaque, not one of
+	 * CalPlan's blocks) takes, or null when none overlaps it. A started block
+	 * an event took did not happen as planned.
+	 *
+	 * @param CalendarEvent[] $events
+	 */
+	public static function takenAt(CalendarEvent $block, array $events): ?\DateTimeImmutable {
+		$at = null;
+		foreach ($events as $e) {
+			if ($e->autoScheduleTaskUid !== null || ($e->transp ?? null) === 'TRANSPARENT' || $e->end <= $e->start
+				|| $e->start >= $block->end || $e->end <= $block->start) {
+				continue;
+			}
+			$from = $e->start > $block->start ? $e->start : $block->start;
+			if ($at === null || $from < $at) {
+				$at = $from;
+			}
+		}
+		return $at;
 	}
 
 	/**

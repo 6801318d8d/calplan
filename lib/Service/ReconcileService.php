@@ -207,7 +207,7 @@ class ReconcileService {
 				}
 			}
 			if ($processReview) {
-				$tasks = $this->reviewExpiredTasks($userId, $calendarId, $tasks, $eventsByCalendar[$uri], $now, $restarted, $released, $rewritten);
+				$tasks = $this->reviewExpiredTasks($userId, $calendarId, $tasks, $eventsByCalendar[$uri], $allEvents, $now, $restarted, $released, $rewritten);
 			}
 			$taskReadNs += hrtime(true) - $phaseStarted;
 			$taskCount += count($tasks);
@@ -458,12 +458,19 @@ class ReconcileService {
 	 * @param array<string, string> $rewritten
 	 * @return Task[]
 	 */
-	private function reviewExpiredTasks(string $userId, string $calendarId, array $tasks, array $events, \DateTimeImmutable $now, array &$restarted, array &$released, array &$rewritten): array {
-		$lastEnd = [];
+	private function reviewExpiredTasks(string $userId, string $calendarId, array $tasks, array $events, array $busyEvents, \DateTimeImmutable $now, array &$restarted, array &$released, array &$rewritten): array {
+		// A block an event took did not happen, so it is planned anew, not reviewed.
+		$lastBlock = [];
 		foreach ($events as $event) {
 			$uid = $event->autoScheduleTaskUid;
-			if ($uid !== null && (!isset($lastEnd[$uid]) || $event->end > $lastEnd[$uid])) {
-				$lastEnd[$uid] = $event->end;
+			if ($uid !== null && (!isset($lastBlock[$uid]) || $event->end > $lastBlock[$uid]->end)) {
+				$lastBlock[$uid] = $event;
+			}
+		}
+		$lastEnd = [];
+		foreach ($lastBlock as $uid => $block) {
+			if (Reconciler::takenAt($block, $busyEvents) === null) {
+				$lastEnd[$uid] = $block->end;
 			}
 		}
 		$autoReschedule = $this->config->getAutoRescheduleMinutes($userId) > 0;

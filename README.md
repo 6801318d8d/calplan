@@ -107,7 +107,8 @@ CalPlan plans up to 14 days ahead on a 15-minute grid.
   task from its start time through the end of that day; so does a start time
   too close to the end of the working hours for the task.
 - A block that has started stays where it is until the expired-block review
-  has looked at it.
+  has looked at it, unless an event now overlaps it: then it did not happen,
+  and its task is planned again from now.
 - Daily task minutes and daily block count are both enforced, counting the
   day's blocks that have already started or ended.
 - Task gaps and buffers around ordinary events are applied before placement.

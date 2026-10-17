@@ -278,6 +278,21 @@ class ReconcilerTest extends AutoScheduleTestCase {
 		$this->assertSame('2026-08-19 09:45:00', $released->toPut[0][1]->start->format('Y-m-d H:i:s'));
 	}
 
+	public function testAStartedBlockAnEventNowTakesIsPlannedAnew(): void {
+		$now = $this->utc('2026-08-19 09:20:00');
+		$t = $this->task('T', estimatedMinutes: 30);
+		$started = new CalendarEvent('calplan-T', $this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 09:30:00'), 'T', '🔒 T', "---Task---\nTitle: T\nPriority: 5", null, null, 5);
+		// A meeting moved over the block from 09:10: the block did not happen.
+		$meeting = new CalendarEvent('mtg', $this->utc('2026-08-19 09:10:00'), $this->utc('2026-08-19 10:00:00'));
+		$recon = $this->reconcile([$t], $this->allWeek(), [$started], $now, extraBusyEvents: [$meeting]);
+		$this->assertSame('2026-08-19 10:00:00', $recon->toPut[0][1]->start->format('Y-m-d H:i:s'));
+		// Only its 10 minutes before the meeting were spent.
+		$this->assertSame(10, $recon->spent[0]['minutes']);
+		// A transparent event does not take it.
+		$free = new CalendarEvent('free', $this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'), transp: 'TRANSPARENT');
+		$this->assertSame(['T'], $this->reconcile([$t], $this->allWeek(), [$started], $now, extraBusyEvents: [$free])->unchanged);
+	}
+
 	public function testTimeSpentTodayCountsAgainstTheDailyCap(): void {
 		$now = $this->utc('2026-08-19 10:30:00');
 		// DONE's block 09:00-10:00 leaves with its task: 60 minutes spent today.
