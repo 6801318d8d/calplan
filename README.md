@@ -35,9 +35,9 @@ CalPlan works with Nextcloud calendars that contain both:
 
 A task/event calendar is the safest choice. A Tasks-only list (what the Tasks
 app creates) cannot show an event in any calendar, so CalPlan gives its tasks
-no block (Reconcile diagnostics count them as not scheduled). Some third-party
-clients do not display mixed task/event calendars reliably; if a client does
-not show the generated blocks, try the same calendar in Nextcloud Calendar.
+no block and flags them as not scheduled. Some third-party clients do not
+display mixed task/event calendars reliably; if a client does not show the
+generated blocks, try the same calendar in Nextcloud Calendar.
 
 CalPlan plans and writes only in your own calendars. Tasks in a calendar someone
 shared with you are planned by its owner's CalPlan; its events, like those of
@@ -113,6 +113,9 @@ by default (7–90, **Personal settings → CalPlan → Planning window**).
   tree's depth-first order, siblings in Tasks' manual order ("Sort by:
   Manually", `X-APPLE-SORT-ORDER`, else creation time). Subtasks' own due dates
   and priorities are ignored for scheduling.
+- Tasks that cannot be placed are flagged in Tasks: a warning icon in the
+  list and a "Not scheduled" line with the reason in the sidebar (a parent
+  shows how many of its subtasks are not scheduled).
 - Busy time comes from all of your active calendars, including calendars
   shared with you, subscriptions and federated calendars.
 - `TRANSPARENT` events do not block time.

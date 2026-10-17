@@ -44,6 +44,7 @@ class ConfigService {
 	public const KEY_IGNORED_EVENT_TITLES = 'ignored_event_titles';
 	public const KEY_EVENT_TITLE_MATCH_MODE = 'event_title_match_mode';
 	public const KEY_PLAN_ACTIVE = 'plan_active';
+	public const KEY_UNSCHEDULED_TASKS = 'unscheduled_tasks';
 	public const KEY_PLANNING_DAYS = 'planning_days';
 	public const KEY_RESTARTED_TASKS = 'restarted_tasks';
 	public const KEY_SPENT_TODAY = 'spent_today';
@@ -147,6 +148,30 @@ class ConfigService {
 	public function getWorkingHours(string $userId): WorkingHours {
 		$map = $this->storedWorkingHours($userId) ?? $this->availabilityWorkingHours($userId);
 		return $map !== null ? WorkingHoursService::fromMap($map) : WorkingHoursService::default();
+	}
+
+	/**
+	 * Tasks the last reconcile could not place, for the Tasks UI warnings.
+	 *
+	 * @return array<string, array{reason: string, uri: string}> keyed by task UID (uri = object URI)
+	 */
+	public function getUnscheduledTasks(string $userId): array {
+		$decoded = json_decode($this->config->getUserValue($userId, Application::APP_ID, self::KEY_UNSCHEDULED_TASKS, '{}'), true);
+		return is_array($decoded) ? $decoded : [];
+	}
+
+	/**
+	 * @param array<string, array{reason: string, uri: string}> $tasks
+	 * @return bool whether the stored map changed
+	 */
+	public function setUnscheduledTasks(string $userId, array $tasks): bool {
+		ksort($tasks, SORT_STRING);
+		$json = (string)json_encode((object)$tasks, JSON_UNESCAPED_SLASHES);
+		if ($json === $this->config->getUserValue($userId, Application::APP_ID, self::KEY_UNSCHEDULED_TASKS, '{}')) {
+			return false;
+		}
+		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_UNSCHEDULED_TASKS, $json);
+		return true;
 	}
 
 	/** Whether the last reconcile had tasks to schedule or blocks to maintain. */

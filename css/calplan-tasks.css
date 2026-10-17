@@ -444,3 +444,45 @@
 	to { transform: rotate(360deg); }
 }
 
+/* 5. Not scheduled: an icon in the task list and a notice row in the sidebar. */
+.calplan-unscheduled-icon {
+	display: inline-flex;
+	align-items: center;
+	margin-inline-end: 4px;
+	color: var(--color-warning, #c28900);
+}
+
+.property__item.calplan-notice-row {
+	display: flex;
+	width: 100%;
+	padding: 0 6px;
+	border-bottom: 1px solid var(--color-border);
+	color: var(--color-warning-text, #8a6100);
+}
+
+.property__item.calplan-notice-row[hidden] {
+	display: none !important;
+}
+
+.calplan-notice-row .item__content {
+	display: flex;
+	align-items: center;
+	gap: 0 4px;
+	min-width: 0;
+	min-height: var(--default-clickable-area);
+}
+
+.calplan-notice-row .content__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--default-clickable-area);
+	min-width: var(--default-clickable-area);
+	color: var(--color-warning, #c28900);
+}
+
+.calplan-notice-row .content__name {
+	white-space: normal;
+	line-height: 1.3;
+	padding-block: 6px;
+}

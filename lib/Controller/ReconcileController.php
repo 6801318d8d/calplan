@@ -65,6 +65,7 @@ class ReconcileController extends OCSController {
 			'unscheduled' => (int)($report['unscheduled'] ?? 0),
 			'unscheduledReasons' => (object)($report['unscheduledReasons'] ?? []),
 			'lastRun' => $report ?? ($this->configService->getReconcileDiagnostics($uid)[0] ?? null),
+			'unscheduledTasks' => (object)$this->configService->getUnscheduledTasks($uid),
 			'rewrittenTasks' => (object)$this->configService->getRewrittenTasks($uid, time()),
 		]);
 	}
@@ -89,6 +90,8 @@ class ReconcileController extends OCSController {
 		return new DataResponse([
 			'lastRun' => $reports[0] ?? null,
 			'recentRuns' => $reports,
+			// Task UID => {reason, uri}: what the Tasks UI flags as not scheduled.
+			'unscheduledTasks' => (object)$this->configService->getUnscheduledTasks($uid),
 			// Task UID => {uri, at}: tasks CalPlan rewrote, which an open Tasks page reloads.
 			'rewrittenTasks' => (object)$this->configService->getRewrittenTasks($uid, time()),
 		]);

@@ -170,7 +170,7 @@ class ReconcileService {
 		$taskCount = 0;
 		$scheduledTaskCount = 0;
 		$taskReadNs = 0;
-		$unscheduled = [];
+		$unscheduledTasks = [];
 		$rewritten = [];
 		$released = [];
 		$seenUids = [];
@@ -229,7 +229,7 @@ class ReconcileService {
 				if (isset($seenUids[$task->id])) {
 					// The same UID in an earlier calendar (an .ics imported twice):
 					// one task, one plan.
-					$unscheduled[(string)$task->id] ??= 'duplicate_uid';
+					$unscheduledTasks[(string)$task->id] ??= ['reason' => 'duplicate_uid', 'uri' => (string)$task->objectUri];
 					continue;
 				}
 				$seenUids[$task->id] = true;
@@ -240,7 +240,7 @@ class ReconcileService {
 				// (and blocks stored there earlier are removed).
 				foreach ($toSchedule as $task) {
 					if (!$task->hasScheduledSubtasks) {
-						$unscheduled[(string)$task->id] = 'calendar_without_events';
+						$unscheduledTasks[(string)$task->id] = ['reason' => 'calendar_without_events', 'uri' => (string)$task->objectUri];
 					}
 				}
 				$toSchedule = [];
@@ -293,7 +293,7 @@ class ReconcileService {
 				$tasksById[$task->id] = $task;
 			}
 			foreach ($recon->unscheduled as $taskId => $reason) {
-				$unscheduled[(string)$taskId] = $reason;
+				$unscheduledTasks[(string)$taskId] = ['reason' => $reason, 'uri' => (string)($tasksById[$taskId]->objectUri ?? '')];
 				if (isset($tasksById[$taskId])) {
 					try {
 						$this->history->recordUnscheduled($userId, $tasksById[$taskId], $reason, $now);
@@ -324,8 +324,8 @@ class ReconcileService {
 			$calendarDiagnostics[$uri]['unchanged'] = count($recon->unchanged);
 			$calendarDiagnostics[$uri]['unscheduled'] = count($recon->unscheduled);
 		}
-		foreach ($unscheduled as $reason) {
-			$unscheduledReasons[$reason] = ($unscheduledReasons[$reason] ?? 0) + 1;
+		foreach ($unscheduledTasks as $entry) {
+			$unscheduledReasons[$entry['reason']] = ($unscheduledReasons[$entry['reason']] ?? 0) + 1;
 		}
 		try {
 			$this->config->addSpentToday($userId, $today, $spent);
@@ -335,6 +335,8 @@ class ReconcileService {
 
 		// Lets the event-change listener and cron skip users with nothing to plan.
 		$this->config->setPlanActive($userId, $plans !== []);
+		// Which tasks could not be placed and why, for the Tasks UI warnings.
+		$unscheduledChanged = $this->config->setUnscheduledTasks($userId, $unscheduledTasks);
 		$this->config->addRewrittenTasks($userId, $rewritten, $now->getTimestamp());
 
 		$report = [
@@ -353,7 +355,7 @@ class ReconcileService {
 			'removed' => $totals['delete'] - $totals['deleteFailures'],
 			'plannedWrites' => ['put' => $totals['put'], 'delete' => $totals['delete']],
 			'unchanged' => $totals['unchanged'],
-			'unscheduled' => count($unscheduled),
+			'unscheduled' => count($unscheduledTasks),
 			'unscheduledReasons' => $unscheduledReasons,
 			'reviewed' => count($rewritten),
 			'writeFailures' => ['put' => $totals['putFailures'], 'delete' => $totals['deleteFailures']],
@@ -370,7 +372,7 @@ class ReconcileService {
 		$this->lastReport = $report;
 		// A background run that changed nothing is not worth one of the ten
 		// diagnostics entries (they would cover less than an hour).
-		$changed = $totals['put'] + $totals['delete'] + $totals['putFailures'] + $totals['deleteFailures'] + count($rewritten) > 0;
+		$changed = $totals['put'] + $totals['delete'] + $totals['putFailures'] + $totals['deleteFailures'] + count($rewritten) > 0 || $unscheduledChanged;
 		if ($trigger !== 'background' || $changed) {
 			try {
 				$this->config->recordReconcileDiagnostic($userId, $report);

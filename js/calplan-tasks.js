@@ -16,7 +16,8 @@
  *
  * Tasks-only behavior:
  *   2. Task list — renders a small SVG "CalPlan" icon next to any task that
- *      carries the `calplan` category, read from the rendered tag chips.
+ *      carries the `calplan` category, read from the rendered tag chips, and a
+ *      warning icon next to tasks CalPlan could not schedule.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
  *      bound to whether the open task has the `calplan` category, plus the
  *      Duration row. Changes go through
@@ -359,6 +360,24 @@
 			if (existingIcon) existingIcon.remove()
 			if (li.hasAttribute('data-calplan-marked')) li.removeAttribute('data-calplan-marked')
 		}
+
+		// Not-scheduled warning, scoped to this row's own body (not its subtasks).
+		// DOM writes only on change: the page-wide observer re-runs this.
+		var entry = unscheduledByUri(body.getAttribute('task-id'))
+		var warning = body.querySelector('.calplan-unscheduled-icon')
+		if (isWarning(entry)) {
+			var text = t('Not scheduled: {reason}', { reason: reasonText(entry.reason) })
+			var iconBox = body.querySelector('.task-body__icons')
+			if (!warning && iconBox) {
+				warning = document.createElement('span')
+				warning.className = 'calplan-unscheduled-icon'
+				warning.innerHTML = ICON_ALERT
+				iconBox.insertBefore(warning, iconBox.firstChild)
+			}
+			if (warning && warning.title !== text) warning.title = text
+		} else if (warning) {
+			warning.remove()
+		}
 	}
 
 	function scanTaskList(root) {
@@ -368,12 +387,36 @@
 		}
 	}
 
-	// --- Reconcile status ----------------------------------------------------
+	// --- Reconcile status and not-scheduled warnings -------------------------
 
+	/*
+	 * After every reconcile the server keeps the tasks it could not place
+	 * (task UID => {reason, uri}). Tasks marks them: a warning icon in the list
+	 * and a "Not scheduled" line with the reason in the sidebar; a parent says
+	 * how many of its subtasks are not scheduled. Nothing is written to tasks.
+	 */
+	var unscheduledTasks = {}
+	var unscheduledUris = {}
 	var latestReconcileRun = null
 	var statusSeq = 0
 	var appliedStatusSeq = 0
 	var seenRewrites = {}
+	var ICON_ALERT = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10V14H13V10M11,16V18H13V16"/></svg>'
+
+	function reasonTexts() {
+		return {
+			no_fit_before_due: t('no free time before the deadline'),
+			daily_task_count_reached: t('no room in the planning window within your maximum blocks per day'),
+			duration_exceeds_daily_cap: t('longer than your maximum task time per day'),
+			duration_exceeds_openings: t('longer than your longest working-hours window'),
+			no_capacity_within_horizon: t('no free time in the planning window'),
+			no_working_hours: t('no working hours set'),
+			starts_after_horizon: t('it starts after the planning window'),
+			calendar_without_events: t('its list holds only tasks, so no calendar can show its block: move it to a calendar that also holds events'),
+			duplicate_uid: t('another calendar has a task with the same UID; only that one is planned'),
+		}
+	}
+
 	function loadReconcileStatus() {
 		var seq = ++statusSeq
 		return api('GET', '/reconcile/status').then(function (data) {
@@ -387,6 +430,7 @@
 		if (!data || seq < appliedStatusSeq) return
 		appliedStatusSeq = seq
 		if (data.lastRun) latestReconcileRun = data.lastRun
+		if (data.unscheduledTasks) setUnscheduled(data.unscheduledTasks)
 		if (data.rewrittenTasks) reloadRewrittenTasks(data.rewrittenTasks)
 	}
 
@@ -407,6 +451,49 @@
 			seenRewrites[uid] = entry.at
 			store.dispatch('fetchFullTask', { task: task }).catch(function (e) { warn('could not reload a task', e) })
 		})
+	}
+
+	function setUnscheduled(map) {
+		var next = map && typeof map === 'object' && !Array.isArray(map) ? map : {}
+		if (JSON.stringify(next) === JSON.stringify(unscheduledTasks)) return
+		unscheduledTasks = next
+		// Object URI => entry, for the task-list rows (which carry the URI).
+		unscheduledUris = {}
+		for (var uid in next) {
+			if (Object.prototype.hasOwnProperty.call(next, uid) && next[uid] && next[uid].uri) unscheduledUris[next[uid].uri] = next[uid]
+		}
+		scanTaskList(document)
+		ensureSidebarCheckbox()
+	}
+
+	/** A real problem, not just a task that starts after the planning window. */
+	function isWarning(entry) {
+		return !!entry && entry.reason !== 'starts_after_horizon'
+	}
+
+	function unscheduledByUri(uri) {
+		return uri && Object.prototype.hasOwnProperty.call(unscheduledUris, uri) ? unscheduledUris[uri] : null
+	}
+
+	/** The entry of *task* itself (a duplicate UID elsewhere is matched by its object URI). */
+	function ownEntry(task) {
+		var entry = task && Object.prototype.hasOwnProperty.call(unscheduledTasks, task.uid) ? unscheduledTasks[task.uid] : null
+		return entry && (!entry.uri || !task.uri || entry.uri === task.uri) ? entry : null
+	}
+
+	function reasonText(reason) {
+		return reasonTexts()[reason] || String(reason).replace(/_/g, ' ')
+	}
+
+	/** The sidebar notice for *task*, or null. */
+	function noticeText(task) {
+		if (!task) return null
+		var own = ownEntry(task)
+		if (isWarning(own)) return t('Not scheduled: {reason}', { reason: reasonText(own.reason) })
+		var count = descendants(task).filter(function (sub) { return isWarning(ownEntry(sub)) }).length
+		if (count > 0) return n('{count} subtask is not scheduled', '{count} subtasks are not scheduled', count)
+		if (own) return t('Not planned yet: {reason}', { reason: reasonText(own.reason) })
+		return null
 	}
 
 	function renderReconcileStatus(container, run) {
@@ -741,7 +828,7 @@
 		})
 		if (subtree.length === 0) {
 			store.dispatch('setTags', { task: task, tags: flaggedTags(task, on) })
-			// The PUT re-plans on the server; then refresh the status.
+			// The PUT re-plans on the server; then refresh the warnings.
 			whenTaskWritten(task, function (ok) {
 				if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
 				loadReconcileStatus().catch(function () {})
@@ -995,7 +1082,24 @@
 		},
 	}
 
-	var SIDEBAR_ROWS = [durationRowSpec]
+	var noticeRowSpec = {
+		className: 'calplan-notice-row',
+		html: function () {
+			return '  <span class="content__icon">' + ICON_ALERT + '</span>' +
+				'  <span class="content__name calplan-notice-text"></span>'
+		},
+		placeholders: function () {},
+		visible: function (task) { return noticeText(task) !== null },
+		read: function (task) { return { text: noticeText(task) || '' } },
+		render: function (row, value) {
+			var el = row.querySelector('.calplan-notice-text')
+			if (el.textContent !== value.text) el.textContent = value.text
+			if (row.title !== value.text) row.title = value.text
+		},
+		write: function () { return null },
+	}
+
+	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec]
 
 	/** Write the row's value into *task* (spec.write) and save it through Tasks' Vuex store. */
 	function commitRow(row, spec, task) {
@@ -1011,7 +1115,7 @@
 		} else {
 			store.dispatch('updateTask', task)
 		}
-		// The PUT re-plans on the server; then refresh the status.
+		// The PUT re-plans on the server; then refresh the warnings.
 		whenTaskWritten(task, function (ok) {
 			if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
 			loadReconcileStatus().catch(function () {})
@@ -1127,7 +1231,11 @@
 		}
 		var active = document.activeElement
 		if (active && active.tagName === 'INPUT' && row.contains(active)) return
-		showRowValue(row, spec.read(task))
+		if (spec.render) {
+			spec.render(row, spec.read(task), readOnly)
+		} else {
+			showRowValue(row, spec.read(task))
+		}
 	}
 
 	/** Keep the extra rows right after the Auto-schedule row, in SIDEBAR_ROWS order. */
@@ -1171,7 +1279,7 @@
 	// --- Driver ----------------------------------------------------------
 
 	// Elements CalPlan renders itself; changes inside them never need a pass.
-	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-task-icon, .calplan-reconcile-item, .calplan-help-backdrop'
+	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-notice-row, .calplan-task-icon, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
 
 	function isOwnMutation(record) {
 		var node = record.target
@@ -1210,9 +1318,8 @@
 			obs.observe(document.body, { childList: true, subtree: true })
 			if (isCalendarPath()) return // Calendar asks for the status after each edit
 			loadDefaultDuration()
-			// The reconcile status (tasks CalPlan rewrote, to reload): now, then
-			// every minute while the tab is visible (reconciles from cron, other
-			// clients or event saves).
+			// Not-scheduled warnings: now, then every minute while the tab is
+			// visible (reconciles from cron, other clients or event saves).
 			loadReconcileStatus().catch(function () {})
 			setInterval(function () {
 				if (!document.hidden) loadReconcileStatus().catch(function () {})

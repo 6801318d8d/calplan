@@ -299,8 +299,8 @@ Per-user state is stored with Nextcloud's standard `OCP\IConfig` user values:
 - ignored calendars and event-title rules;
 - history consent and retention;
 - the latest ten aggregate reconcile diagnostics;
-- tasks CalPlan rewrote in the last hour (for the Tasks page to reload),
-  today's spent block time, and a re-plan hold.
+- the last run's unscheduled tasks, tasks CalPlan rewrote in the last hour (for
+  the Tasks page to reload), today's spent block time, and a re-plan hold.
 
 Optional scheduling history is stored as monthly JSONL files in per-user appdata.
 Task UIDs are converted to salted HMAC keys. Plaintext titles, notes, locations,
@@ -317,7 +317,7 @@ script adds:
 
 - the Tasks sidebar Auto-schedule switch and the Duration row (disabled for
   tasks Tasks cannot save);
-- task-list badges;
+- task-list badges and not-scheduled warnings;
 - Reconcile and help actions in Tasks and Calendar;
 - latest-run status in the help dialog; and
 - in Calendar, a refresh after an edit whose re-plan moved blocks.
