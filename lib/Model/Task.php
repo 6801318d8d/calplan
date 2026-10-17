@@ -38,8 +38,17 @@ class Task {
 		public readonly ?string $objectUri = null,
 		/** @var string[] */
 		public readonly array $categories = [],
+		/** This task's own per-day limits for itself and its subtasks (0 = none). */
+		public readonly int $dailyLimitMinutes = 0,
+		public readonly int $dailyLimitBlocks = 0,
 		/**
-		 * UIDs of the parent chain, nearest first; resolved in TaskLimits::resolve.
+		 * The limits that bind this task: its own and every ancestor's, resolved
+		 * in TaskLimits::resolve.
+		 * @var list<array{id: string, minutes: int, blocks: int}>
+		 */
+		public readonly array $limitGroups = [],
+		/**
+		 * UIDs of the parent chain, nearest first; resolved with $limitGroups.
 		 * Tasks sharing an ancestor are placed in sequence (SchedulerService).
 		 * @var list<string>
 		 */
@@ -147,14 +156,16 @@ class Task {
 	}
 
 	/**
-	 * A copy with what it inherits along the parent chain.
+	 * A copy with the settings inherited along the parent chain.
 	 *
+	 * @param list<array{id: string, minutes: int, blocks: int}> $limitGroups
 	 * @param list<string> $ancestors
 	 * @param list<int> $sequence
 	 * @param list<string> $ancestorTitles
 	 */
-	public function withInherited(array $ancestors = [], ?\DateTimeImmutable $rootDue = null, int $rootPriority = 0, array $sequence = [], array $ancestorTitles = [], bool $hasScheduledSubtasks = false, ?\DateTimeImmutable $rootStart = null): self {
+	public function withInherited(array $limitGroups, array $ancestors = [], ?\DateTimeImmutable $rootDue = null, int $rootPriority = 0, array $sequence = [], array $ancestorTitles = [], bool $hasScheduledSubtasks = false, ?\DateTimeImmutable $rootStart = null): self {
 		return $this->with([
+			'limitGroups' => array_values($limitGroups),
 			'ancestors' => array_values($ancestors),
 			'rootDue' => $rootDue,
 			'rootPriority' => $rootPriority,

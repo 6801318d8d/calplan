@@ -74,10 +74,11 @@ class SchedulerService {
 	 * Where *task* can go in *slot*: a block of *minutes* starting at the
 	 * slot's start or later - never before the task's DTSTART (rounded up to
 	 * the 15-minute grid) or *notBefore* - that fits in the slot, ends by the DUE when
-	 * *respectDue*, and stays within the day's cap and the blocks-per-day
-	 * limit. Null otherwise; a block-count rejection is noted in *why*.
+	 * *respectDue*, and stays within the day's cap, the blocks-per-day limit and
+	 * the limits of the task's groups (Task::$limitGroups). Null otherwise; a
+	 * block-count or group-limit rejection is noted in *why*.
 	 *
-	 * @param array{count: bool} $why
+	 * @param array{count: bool, limit: bool} $why
 	 */
 	private function tryFit(PlanState $st, Slot $slot, Task $task, int $minutes, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
 		$start = $this->earliestStart($st, $slot, $task, $notBefore);
@@ -99,6 +100,13 @@ class SchedulerService {
 		if ($st->dailyTaskCount > 0 && ($st->dailyBlocks[$day] ?? 0) >= $st->dailyTaskCount) {
 			$why['count'] = true;
 			return null;
+		}
+		foreach ($task->limitGroups as $group) {
+			if (($group['minutes'] > 0 && ($st->groupMinutes[$group['id']][$day] ?? 0) + $minutes > $group['minutes'])
+				|| ($group['blocks'] > 0 && ($st->groupBlocks[$group['id']][$day] ?? 0) >= $group['blocks'])) {
+				$why['limit'] = true;
+				return null;
+			}
 		}
 		return new Slot($start, $end);
 	}
@@ -126,7 +134,7 @@ class SchedulerService {
 	 * and the task's own DTSTART windows (1.5.5), or null.
 	 *
 	 * @param Slot[] $extra per-task DTSTART windows
-	 * @param array{count: bool} $why
+	 * @param array{count: bool, limit: bool} $why
 	 */
 	private function earliestFit(PlanState $st, array $extra, Task $task, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
 		$best = null;
@@ -199,13 +207,13 @@ class SchedulerService {
 	 * start at now, never in the past).
 	 *
 	 * @param Slot[] $extra
-	 * @param array{count: bool} $why
+	 * @param array{count: bool, limit: bool} $why
 	 */
 	private function place(PlanState $st, Task $task, array $extra, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
 		$due = $task->schedulingDue();
 		$block = $this->earliestFit($st, $extra, $task, $due !== null && $due > $st->now, $notBefore, $why);
 		if ($block !== null) {
-			$st->charge($st->day($block->start), $task->estimatedMinutes);
+			$st->charge($st->day($block->start), $task->estimatedMinutes, self::groupIds($task));
 			$st->occupy($block);
 		}
 		return $block;
@@ -276,6 +284,11 @@ class SchedulerService {
 		return count($a) <=> count($b);
 	}
 
+	/** @return string[] the ids of the limit groups that bind *task* */
+	private static function groupIds(Task $task): array {
+		return array_map(fn (array $group) => $group['id'], $task->limitGroups);
+	}
+
 	/**
 	 * Compute detailed placement outcomes, including a stable reason when a task
 	 * cannot be placed. The compatibility schedule() method below unwraps slots.
@@ -290,7 +303,7 @@ class SchedulerService {
 	 * @param Task[]      $tasks
 	 * @param BusyBlock[] $busy
 	 * @param array<string, Slot> $pinned
-	 * @param list<array{day: string, minutes: int}> $spent
+	 * @param list<array{day: string, minutes: int, groups: string[]}> $spent
 	 * @return array<string, PlacementResult>
 	 */
 	public function scheduleDetailed(array $tasks, WorkingHours $working, array $busy, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $dailyTaskCount = 0, array $pinned = [], array $spent = []): array {
@@ -306,14 +319,14 @@ class SchedulerService {
 		$st = new PlanState($now, $working, $busy, $horizonDays, $dailyCap, $dailyTaskCount, $taskGapMinutes,
 			FreeSlotsService::freeSlots($working, $busy, $now, $horizonDays, $minEst));
 		foreach ($spent as $entry) {
-			$st->charge($entry['day'], $entry['minutes']);
+			$st->charge($entry['day'], $entry['minutes'], $entry['groups']);
 		}
 		$pins = [];
 		foreach ($candidates as $task) {
 			if (isset($pinned[$task->id])) {
 				$block = new Slot($pinned[$task->id]->start->setTimezone($tz), $pinned[$task->id]->end->setTimezone($tz));
 				$pins[$task->id] = $block;
-				$st->charge($st->day($block->start), PlanState::minutesBetween($block->start, $block->end));
+				$st->charge($st->day($block->start), PlanState::minutesBetween($block->start, $block->end), self::groupIds($task));
 				$st->occupy($block);
 			}
 		}
@@ -325,7 +338,7 @@ class SchedulerService {
 		$sequenceEnd = [];
 		$outcomes = [];
 		foreach ($candidates as $task) {
-			$why = ['count' => false];
+			$why = ['count' => false, 'limit' => false];
 			$notBefore = null;
 			foreach ($task->ancestors as $ancestor) {
 				if (isset($sequenceEnd[$ancestor]) && ($notBefore === null || $sequenceEnd[$ancestor] > $notBefore)) {
@@ -354,12 +367,15 @@ class SchedulerService {
 		return $out;
 	}
 
-	/** @param array{count: bool} $why */
+	/** @param array{count: bool, limit: bool} $why */
 	private function unscheduledReason(Task $task, PlanState $st, array $why): string {
-		// A rejection by the block count is only noted where the time itself
-		// would have fitted (before a reachable deadline).
+		// Rejections by the block count or a daily limit are only noted where
+		// the time itself would have fitted (before a reachable deadline).
 		if ($why['count']) {
 			return 'daily_task_count_reached';
+		}
+		if ($why['limit']) {
+			return 'task_daily_limit_reached';
 		}
 		$horizonEnd = $st->now->setTime(0, 0)->modify('+' . $st->horizonDays . ' days');
 		$from = $task->scheduledFrom();

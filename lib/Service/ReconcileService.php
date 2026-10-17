@@ -173,6 +173,7 @@ class ReconcileService {
 		$unscheduledTasks = [];
 		$rewritten = [];
 		$released = [];
+		$groupsByTask = [];
 		$seenUids = [];
 		$restarted = array_fill_keys($this->config->getRestartedTasks($userId), true);
 		$autoReschedule = $policy['autoRescheduleMinutes'] > 0;
@@ -221,6 +222,9 @@ class ReconcileService {
 					$tasks,
 				));
 			}
+			foreach ($tasks as $task) {
+				$groupsByTask[$task->id] ??= array_map(fn (array $group) => $group['id'], $task->limitGroups);
+			}
 			$toSchedule = [];
 			foreach ($tasks as $task) {
 				if (!$task->autoSchedule || $task->isDone() || $this->config->isTaskPaused($userId, $task->id)) {
@@ -267,6 +271,7 @@ class ReconcileService {
 			eventBufferMinutes: $policy['eventBufferMinutes'],
 			dailyTaskCount: $policy['dailyTaskCount'],
 			released: $released,
+			groupsByTask: $groupsByTask,
 			priorSpent: $this->config->getSpentToday($userId, $today),
 		);
 		$scheduleNs = hrtime(true) - $phaseStarted;

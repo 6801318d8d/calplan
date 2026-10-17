@@ -96,12 +96,18 @@ Below **Auto-schedule**, CalPlan adds:
 
 - **Duration** — the block length, saved as the task's `ESTIMATED-DURATION`
   (draft-ietf-calext-ical-tasks). Empty means your default duration.
+- **Daily limit** (tasks with subtasks; `X-CALPLAN-DAILY-MAX-TIME`, a
+  duration, and `X-CALPLAN-DAILY-MAX-BLOCKS`) — at most this much block time
+  and/or this many blocks per day for the task and all its subtasks together.
+  Blocks of the day that have already started or ended count too.
 
-Turning **Auto-schedule** on or off for a task with subtasks does the same for
-all of them. While some subtasks (at any depth) are still to be scheduled or
-awaiting review, they get the blocks and the parent gets none; once all are
-done, or none is flagged, the parent is planned like any task. A completed
-parent no longer rules the subtasks left open under it.
+A Daily limit set on a task applies to all its subtasks; nested limits
+all apply at once. Turning **Auto-schedule** on or off for a task with
+subtasks does the same for all of them. While some subtasks (at any depth) are
+still to be scheduled or awaiting review, they get the blocks and the parent
+gets none; once all are done, or none is flagged, the parent is planned like any
+task. A completed parent no longer rules or limits the subtasks left open under
+it.
 
 ## How scheduling works
 

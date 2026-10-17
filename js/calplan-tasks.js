@@ -20,7 +20,7 @@
  *      warning icon next to tasks CalPlan could not schedule.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
  *      bound to whether the open task has the `calplan` category, plus the
- *      Duration row. Changes go through
+ *      Duration and Daily limit rows. Changes go through
  *      Tasks' own Vuex actions (so they persist through Tasks' CalDAV sync);
  *      the server re-plans after each write.
  *
@@ -406,6 +406,7 @@
 	function reasonTexts() {
 		return {
 			no_fit_before_due: t('no free time before the deadline'),
+			task_daily_limit_reached: t('no room in the planning window within its daily limit (its own or a parent task’s)'),
 			daily_task_count_reached: t('no room in the planning window within your maximum blocks per day'),
 			duration_exceeds_daily_cap: t('longer than your maximum task time per day'),
 			duration_exceeds_openings: t('longer than your longest working-hours window'),
@@ -732,7 +733,7 @@
 			'<div class="calplan-help-dialog" role="dialog" aria-modal="true" aria-labelledby="calplanHelpTitle">' +
 			'  <div class="calplan-help-header"><h2 id="calplanHelpTitle">' + escapeHtml(t('CalPlan help')) + '</h2><button type="button" class="calplan-help-close" aria-label="' + escapeHtml(t('Close')) + '">×</button></div>' +
 			'  <p>' + t('<strong>CalPlan finds time for your Nextcloud tasks.</strong> Auto-schedule adds the standard <code>calplan</code> category and creates a derived locked event in the same calendar.') + '</p>' +
-			'  <p>' + t('On a task with subtasks, the switch turns Auto-schedule on or off for all its subtasks. While some of them are still to be scheduled or awaiting review, they get the blocks, not the parent; once they are all done, or none has Auto-schedule on, the parent is planned like any task.') + '</p>' +
+			'  <p>' + t('On a task with subtasks, the switch turns Auto-schedule on or off for all its subtasks. While some of them are still to be scheduled or awaiting review, they get the blocks, not the parent; once they are all done, or none has Auto-schedule on, the parent is planned like any task. Its <strong>Daily limit</strong> caps the block time and/or the number of blocks per day for itself and all its subtasks together (limits of nested parents all apply).') + '</p>' +
 			'  <h3>' + escapeHtml(t('What Reconcile does')) + '</h3>' +
 			'  <p>' + t('Reconcile rereads your flagged tasks and busy calendar events, recomputes the current plan, writes new or changed task blocks, and removes blocks for completed, paused, or no-longer-fitting tasks. A block that has already started stays where it is.') + '</p>' +
 			'  <p>' + t('After a block ends and its pacing grace period passes, an incomplete task receives the filterable <code>calplan-review</code> tag — CalPlan’s <strong>“Is complete?”</strong> review marker. Depending on your setting, CalPlan either tries another time or removes Auto-schedule and pauses.') + '</p>' +
@@ -900,7 +901,7 @@
 		return row
 	}
 
-	// --- 3. Sidebar Duration row ------------------------------------------
+	// --- 3. Sidebar Duration and Daily limit rows -------------------------
 
 	/*
 	 * The Tasks app has no duration field. This one stores the block length in
@@ -996,18 +997,18 @@
 	}
 
 	/*
-	 * Sidebar rows made of − [value] + steppers: a time pair (inputs with
-	 * data-part="hours" and "minutes", read as one total). Each row spec says
-	 * when the row shows, how to read the open task's value and how to write a
-	 * new one into its VTODO; the
+	 * Sidebar rows made of − [value] + steppers. A row may hold a time pair
+	 * (inputs with data-part="hours" and "minutes", read as one total) and/or a
+	 * count (data-part="count"). Each row spec says when the row shows, how to
+	 * read the open task's value and how to write a new one into its VTODO; the
 	 * shared code below steps, saves (debounced) and never overwrites a value
 	 * that is being edited. A pending save stays bound to the task it was made
 	 * on, and is saved at once when another task opens.
 	 */
 
-	/** A − [value] + control: it steps the row's total by *step* minutes. */
+	/** A − [value] + control. Time parts step the row's total by *step* minutes; a count steps by *step*. */
 	function stepperHtml(id, part, step, label) {
-		var hint = step === 60 ? t('1 h') : t('{n} min', { n: step })
+		var hint = part === 'count' ? String(step) : (step === 60 ? t('1 h') : t('{n} min', { n: step }))
 		return '    <span class="calplan-stepper">' +
 			'<button type="button" class="calplan-stepper-button" data-part="' + part + '" data-step="-' + step + '" aria-label="' + escapeHtml(t('Less: {label}', { label: label })) + '" title="−' + escapeHtml(hint) + '">' + ICON_MINUS + '</button>' +
 			'<input type="number" id="' + id + '" class="calplan-duration-input" data-part="' + part + '" min="0" step="' + (part === 'hours' ? 'any' : '1') + '" inputmode="decimal" aria-label="' + escapeHtml(label) + '" />' +
@@ -1017,7 +1018,7 @@
 
 	function partInput(row, part) { return row.querySelector('input[data-part="' + part + '"]') }
 
-	/** The number in a part's field: hours may be fractional (1.5 h), minutes are whole. */
+	/** The number in a part's field: hours may be fractional (1.5 h), minutes and counts are whole. */
 	function partNumber(row, part) {
 		var input = partInput(row, part)
 		var raw = input ? String(input.value).replace(',', '.') : ''
@@ -1032,11 +1033,13 @@
 			partInput(row, 'hours').value = value.minutes > 0 ? String(Math.floor(value.minutes / 60)) : ''
 			partInput(row, 'minutes').value = value.minutes > 0 ? String(value.minutes % 60) : ''
 		}
+		if ('count' in value) partInput(row, 'count').value = value.count > 0 ? String(value.count) : ''
 	}
 
 	function rowValue(row, spec) {
 		var value = {}
 		if (spec.time) value.minutes = rowMinutes(row)
+		if (spec.count) value.count = partNumber(row, 'count')
 		return value
 	}
 
@@ -1050,6 +1053,25 @@
 		}
 		return changed
 	}
+
+	/** Set (n > 0) or remove an integer property; true when it changed. */
+	function setCountProp(task, name, count) {
+		var current = task.vtodo.getFirstPropertyValue(name)
+		var changed = count > 0 ? String(current || '') !== String(count) : current != null
+		if (changed) {
+			task.vtodo.removeAllProperties(name)
+			if (count > 0) task.vtodo.addPropertyWithValue(name, String(count))
+		}
+		return changed
+	}
+
+	function hasSubtasks(task) {
+		return !!(task && task.subTasks && Object.keys(task.subTasks).length > 0)
+	}
+
+	var LIMIT_TIME_PROP = 'x-calplan-daily-max-time'
+	var LIMIT_BLOCKS_PROP = 'x-calplan-daily-max-blocks'
+	var ICON_GAUGE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12,16A3,3 0 0,1 9,13C9,11.88 9.61,10.9 10.5,10.39L20.21,4.77L14.68,14.35C14.18,15.33 13.17,16 12,16M12,3C13.81,3 15.5,3.5 16.97,4.32L14.87,5.53C14,5.19 13,5 12,5A8,8 0 0,0 4,13C4,15.21 4.89,17.21 6.34,18.65H6.35C6.74,19.04 6.74,19.67 6.35,20.06C5.96,20.45 5.32,20.45 4.93,20.07V20.07C3.12,18.26 2,15.76 2,13A10,10 0 0,1 12,3M22,13C22,15.76 20.88,18.26 19.07,20.07V20.07C18.68,20.45 18.05,20.45 17.66,20.06C17.27,19.67 17.27,19.04 17.66,18.65V18.65C19.11,17.2 20,15.21 20,13C20,12 19.81,11 19.46,10.1L20.67,8C21.5,9.5 22,11.18 22,13Z"/></svg>'
 
 	var durationRowSpec = {
 		className: 'calplan-duration-row',
@@ -1082,6 +1104,79 @@
 		},
 	}
 
+	var limitRowSpec = {
+		className: 'calplan-duration-row calplan-limit-row',
+		time: true,
+		count: true,
+		// A foldable section: a header with a summary, and a body whose two lines
+		// share a label column so the blocks stepper sits under the hours one.
+		wrapped: true,
+		html: function () {
+			return '<div class="item__content calplan-limit-header" role="button" tabindex="0" aria-expanded="false" aria-controls="calplanLimitBody">' +
+				'  <span class="content__icon">' + ICON_GAUGE + '</span>' +
+				'  <span class="content__name">' + escapeHtml(t('Daily limit')) + '</span>' +
+				'  <div class="item__actions"><span class="calplan-limit-summary"></span><span class="calplan-fold-chevron">' + ICON_CHEVRON + '</span></div>' +
+				'</div>' +
+				'<div class="calplan-limit-body" id="calplanLimitBody">' +
+				'  <div class="calplan-limit-line"><label class="calplan-limit-label" for="calplanLimitHours">' + escapeHtml(t('Time')) + '</label>' +
+				stepperHtml('calplanLimitHours', 'hours', 60, t('Daily limit hours')) +
+				'    <span class="calplan-duration-unit">' + escapeHtml(t('h')) + '</span>' +
+				stepperHtml('calplanLimitMinutes', 'minutes', 15, t('Daily limit minutes')) +
+				'    <span class="calplan-duration-unit">' + escapeHtml(t('min')) + '</span></div>' +
+				'  <div class="calplan-limit-line"><label class="calplan-limit-label" for="calplanLimitBlocks">' + escapeHtml(t('Blocks')) + '</label>' +
+				stepperHtml('calplanLimitBlocks', 'count', 1, t('Daily limit blocks')) +
+				'    <span class="calplan-duration-unit">' + escapeHtml(t('blocks')) + '</span></div>' +
+				'</div>'
+		},
+		placeholders: function (row) {
+			partInput(row, 'hours').placeholder = '–'
+			partInput(row, 'minutes').placeholder = '–'
+			partInput(row, 'count').placeholder = '–'
+			row.title = t('At most this much block time and/or this many blocks per day for this task and all its subtasks together. Leave empty for no limit.')
+		},
+		setup: function (row) {
+			var header = row.querySelector('.calplan-limit-header')
+			setLimitRowOpen(row, limitRowOpenPreference())
+			function toggle() {
+				var open = !row.classList.contains('is-open')
+				setLimitRowOpen(row, open)
+				try { window.localStorage.setItem(LIMIT_OPEN_KEY, open ? '1' : '0') } catch (e) {}
+			}
+			header.addEventListener('click', toggle)
+			header.addEventListener('keydown', function (e) {
+				if (e.target === header && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle() }
+			})
+		},
+		/** Header summary of what the fields currently say. */
+		afterShow: function (row) {
+			var minutes = rowMinutes(row)
+			var blocks = partNumber(row, 'count')
+			var parts = []
+			if (minutes > 0) parts.push(formatDuration(minutes))
+			if (blocks > 0) parts.push(n('{count} block', '{count} blocks', blocks))
+			// Write only on change: replacing the text is a DOM mutation, and the
+			// page-wide MutationObserver that drives syncRow would loop forever.
+			var summary = row.querySelector('.calplan-limit-summary')
+			var text = parts.length ? parts.join(' · ') : t('No limit')
+			if (summary.textContent !== text) summary.textContent = text
+		},
+		// Limits bind a task and its subtasks; a lone task shows the row only
+		// while it has a limit of its own (left from removed subtasks, or set
+		// elsewhere), so that it can be cleared.
+		visible: function (task) {
+			return hasSubtasks(task) || isoDurationMinutes(propValue(task, LIMIT_TIME_PROP)) > 0 || parseInt(propValue(task, LIMIT_BLOCKS_PROP), 10) > 0
+		},
+		read: function (task) {
+			var blocks = parseInt(propValue(task, LIMIT_BLOCKS_PROP), 10)
+			return { minutes: isoDurationMinutes(propValue(task, LIMIT_TIME_PROP)), count: isNaN(blocks) ? 0 : blocks }
+		},
+		write: function (task, value) {
+			var timeChanged = setDurationProp(task, LIMIT_TIME_PROP, value.minutes)
+			var blocksChanged = setCountProp(task, LIMIT_BLOCKS_PROP, value.count)
+			return timeChanged || blocksChanged ? {} : null
+		},
+	}
+
 	var noticeRowSpec = {
 		className: 'calplan-notice-row',
 		html: function () {
@@ -1099,7 +1194,20 @@
 		write: function () { return null },
 	}
 
-	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec]
+	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec, limitRowSpec]
+
+	// Whether the Daily limit section is unfolded: a per-browser preference, closed by default.
+	var LIMIT_OPEN_KEY = 'calplan.dailyLimitOpen'
+	var ICON_CHEVRON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"/></svg>'
+
+	function limitRowOpenPreference() {
+		try { return window.localStorage.getItem(LIMIT_OPEN_KEY) === '1' } catch (e) { return false }
+	}
+
+	function setLimitRowOpen(row, open) {
+		row.classList.toggle('is-open', open)
+		row.querySelector('.calplan-limit-header').setAttribute('aria-expanded', open ? 'true' : 'false')
+	}
 
 	/** Write the row's value into *task* (spec.write) and save it through Tasks' Vuex store. */
 	function commitRow(row, spec, task) {
@@ -1156,9 +1264,9 @@
 	}
 
 	/**
-	 * Step a part by *delta*: the row's total moves, minute steps snapping to
-	 * CalPlan's 15-minute grid (45 min + 15 = 1 h 0 min). An empty time starts
-	 * from zero.
+	 * Step a part by *delta*: time parts move the row's total and snap minute
+	 * steps to CalPlan's 15-minute grid (45 min + 15 = 1 h 0 min); a count
+	 * moves by one. An empty time starts from zero.
 	 */
 	function stepRow(row, spec, part, delta) {
 		var task = openTask()
@@ -1168,31 +1276,40 @@
 			syncRow(row, spec, task)
 		}
 		if (!task || isReadOnly(task)) return
-		var current = rowMinutes(row)
-		if (part === 'hours') {
-			// Whole hours, keeping the minutes (1 h 15 + 1 h = 2 h 15); under an
-			// hour, − has no hour to take and leaves the value alone.
-			if (current + delta < 0) return
-			showRowValue(row, { minutes: current + delta })
+		if (part === 'count') {
+			showRowValue(row, { count: Math.max(0, partNumber(row, 'count') + delta) })
 		} else {
-			var grid = Math.abs(delta)
-			var next = delta > 0 ? Math.floor(current / grid) * grid + grid : Math.ceil(current / grid) * grid - grid
-			showRowValue(row, { minutes: Math.max(0, next) })
+			var current = rowMinutes(row)
+			if (part === 'hours') {
+				// Whole hours, keeping the minutes (1 h 15 + 1 h = 2 h 15); under an
+				// hour, − has no hour to take and leaves the value alone.
+				if (current + delta < 0) return
+				showRowValue(row, { minutes: current + delta })
+			} else {
+				var grid = Math.abs(delta)
+				var next = delta > 0 ? Math.floor(current / grid) * grid + grid : Math.ceil(current / grid) * grid - grid
+				showRowValue(row, { minutes: Math.max(0, next) })
+			}
 		}
+		if (spec.afterShow) spec.afterShow(row)
 		scheduleCommit(row, spec, task)
 	}
 
 	function createRow(spec) {
 		var row = document.createElement('div')
 		row.className = 'property__item ' + spec.className
-		row.innerHTML = '<div class="item__content">' + spec.html() + '</div>'
+		row.innerHTML = spec.wrapped ? spec.html() : '<div class="item__content">' + spec.html() + '</div>'
 		spec.placeholders(row)
+		if (spec.setup) spec.setup(row)
 		var inputs = row.querySelectorAll('.calplan-duration-input')
 		for (var i = 0; i < inputs.length; i++) {
 			// The task being edited is the one open when typing started.
 			inputs[i].addEventListener('focus', function () { row.calplanEditTask = openTask() })
 			inputs[i].addEventListener('change', function () {
 				scheduleCommit(row, spec, (row.calplanPending && row.calplanPending.task) || row.calplanEditTask || openTask())
+			})
+			inputs[i].addEventListener('input', function () {
+				if (spec.afterShow) spec.afterShow(row)
 			})
 			inputs[i].addEventListener('keydown', function (e) {
 				if (e.key === 'Enter') { e.preventDefault(); e.target.blur() }
@@ -1236,6 +1353,7 @@
 		} else {
 			showRowValue(row, spec.read(task))
 		}
+		if (spec.afterShow) spec.afterShow(row)
 	}
 
 	/** Keep the extra rows right after the Auto-schedule row, in SIDEBAR_ROWS order. */

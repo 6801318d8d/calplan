@@ -78,6 +78,16 @@ class IcalCodecTest extends TestCase {
 		$this->assertSame(15, $tasks[0]->estimatedMinutes);
 	}
 
+	public function testParseTasksReadsDailyLimits(): void {
+		$this->requireSabre();
+		$tasks = IcalCodec::parseTasks($this->vtodo("X-CALPLAN-DAILY-MAX-TIME:PT2H30M\r\nX-CALPLAN-DAILY-MAX-BLOCKS:3\r\n"));
+		$this->assertSame(150, $tasks[0]->dailyLimitMinutes);
+		$this->assertSame(3, $tasks[0]->dailyLimitBlocks);
+		$none = IcalCodec::parseTasks($this->vtodo("X-CALPLAN-DAILY-MAX-BLOCKS:lots\r\n"));
+		$this->assertSame(0, $none[0]->dailyLimitMinutes);
+		$this->assertSame(0, $none[0]->dailyLimitBlocks);
+	}
+
 	public function testParseTasksMarksAnAllDayStart(): void {
 		$this->requireSabre();
 		$this->assertTrue(IcalCodec::parseTasks($this->vtodo("DTSTART;VALUE=DATE:20260820\r\n"))[0]->startAllDay);

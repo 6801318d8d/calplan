@@ -14,6 +14,29 @@ use OCA\AutoSchedule\Service\TaskLimits;
 use PHPUnit\Framework\TestCase;
 
 class TaskLimitsTest extends TestCase {
+	/** @param Task[] $tasks */
+	private function groupsById(array $tasks): array {
+		$out = [];
+		foreach (TaskLimits::resolve($tasks) as $task) {
+			$out[$task->id] = array_map(fn (array $g) => $g['id'] . ':' . $g['minutes'] . 'm/' . $g['blocks'] . 'b', $task->limitGroups);
+		}
+		return $out;
+	}
+
+	public function testSubtasksInheritEveryAncestorsLimits(): void {
+		$groups = $this->groupsById([
+			new Task(id: 'COURSE', title: 'Course', dailyLimitMinutes: 120, dailyLimitBlocks: 3),
+			new Task(id: 'MODULE', title: 'Module', parentUid: 'COURSE', dailyLimitBlocks: 1),
+			new Task(id: 'PLAIN', title: 'Module without limits', parentUid: 'COURSE'),
+			new Task(id: 'LESSON', title: 'Lesson', parentUid: 'MODULE'),
+			new Task(id: 'OTHER', title: 'Unrelated'),
+		]);
+		$this->assertSame(['COURSE:120m/3b'], $groups['COURSE']);
+		$this->assertSame(['MODULE:0m/1b', 'COURSE:120m/3b'], $groups['MODULE']);
+		$this->assertSame(['COURSE:120m/3b'], $groups['PLAIN']);
+		$this->assertSame(['MODULE:0m/1b', 'COURSE:120m/3b'], $groups['LESSON']);
+		$this->assertSame([], $groups['OTHER']);
+	}
 
 	public function testAncestorsAreResolvedNearestFirst(): void {
 		$ancestors = [];
@@ -70,14 +93,12 @@ class TaskLimitsTest extends TestCase {
 
 	public function testParentCycleDoesNotLoop(): void {
 		// The links of a cycle are ignored: each task is planned on its own.
-		$ancestors = [];
-		foreach (TaskLimits::resolve([
-			new Task(id: 'A', title: 'A', parentUid: 'B'),
+		$groups = $this->groupsById([
+			new Task(id: 'A', title: 'A', parentUid: 'B', dailyLimitMinutes: 60),
 			new Task(id: 'B', title: 'B', parentUid: 'A'),
-		]) as $task) {
-			$ancestors[$task->id] = $task->ancestors;
-		}
-		$this->assertSame(['A' => [], 'B' => []], $ancestors);
+		]);
+		$this->assertSame(['A:60m/0b'], $groups['A']);
+		$this->assertSame([], $groups['B']);
 	}
 
 	public function testTasksOfACycleAreNotContainers(): void {
@@ -112,7 +133,7 @@ class TaskLimitsTest extends TestCase {
 	public function testACompletedTopTaskNoLongerRulesItsOpenSubtasks(): void {
 		$resolved = [];
 		foreach (TaskLimits::resolve([
-			new Task(id: 'TOP', title: 'Top', due: new \DateTimeImmutable('2026-09-15'), status: 'COMPLETED'),
+			new Task(id: 'TOP', title: 'Top', due: new \DateTimeImmutable('2026-09-15'), status: 'COMPLETED', dailyLimitMinutes: 30),
 			new Task(id: 'MID', title: 'Mid', due: new \DateTimeImmutable('2026-10-27'), parentUid: 'TOP'),
 			new Task(id: 'LEAF', title: 'Leaf', autoSchedule: true, parentUid: 'MID'),
 		]) as $task) {
@@ -120,6 +141,7 @@ class TaskLimitsTest extends TestCase {
 		}
 		$this->assertSame(['MID'], $resolved['LEAF']->ancestors);
 		$this->assertSame('2026-10-27', $resolved['LEAF']->schedulingDue()?->format('Y-m-d'));
+		$this->assertSame([], $resolved['LEAF']->limitGroups);
 		$this->assertSame(['Mid'], $resolved['LEAF']->ancestorTitles);
 	}
 

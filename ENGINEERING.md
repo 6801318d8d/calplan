@@ -36,6 +36,7 @@ A task's own settings live on its `VTODO`:
 | Property | Meaning |
 |---|---|
 | `ESTIMATED-DURATION` | Block length (draft-ietf-calext-ical-tasks), set by the sidebar Duration field |
+| `X-CALPLAN-DAILY-MAX-TIME` / `X-CALPLAN-DAILY-MAX-BLOCKS` | Daily limit for the task and its subtasks together |
 | `X-APPLE-SORT-ORDER` | Tasks' manual order, the order of a tree's subtasks |
 
 No database tables are required.
@@ -162,9 +163,9 @@ the user explicitly enables Auto-schedule again. A task with a subtask still to
 schedule or awaiting review is a container and gets no block itself.
 
 `TaskLimits::resolve` attaches what each task inherits along its `RELATED-TO`
-parent chain within the calendar: the top task's due date, start and priority,
-the tree position, and the parent path. A parent link closing a cycle is
-ignored; a completed ancestor ends the chain.
+parent chain within the calendar: limit groups, the top task's due date, start
+and priority, the tree position, and the parent path. A parent link closing a
+cycle is ignored; a completed ancestor ends the chain.
 
 ### 2. Busy subtraction
 
@@ -201,7 +202,7 @@ Each task then takes the earliest free interval that satisfies:
   before the end of the blocks already placed for its tree;
 - it fits its duration;
 - it finishes by a future `DUE`;
-- it stays within the daily minute and block limits;
+- it stays within the daily minute and block limits and the task's limit groups;
 - required task gaps are preserved.
 
 A timed `DTSTART` on a working day opens a task-specific window from it (or from
@@ -216,8 +217,9 @@ scheduler tries the earliest remaining capacity in the horizon.
 
 The scheduler returns the block or a stable reason: `starts_after_horizon`,
 `no_working_hours`, `duration_exceeds_daily_cap`, `duration_exceeds_openings`,
-`no_fit_before_due`, `no_capacity_within_horizon`, `daily_task_count_reached`.
-ReconcileService adds `calendar_without_events` and `duplicate_uid`.
+`no_fit_before_due`, `no_capacity_within_horizon`, `daily_task_count_reached`,
+`task_daily_limit_reached`. ReconcileService adds `calendar_without_events` and
+`duplicate_uid`.
 
 `Reconciler` compares the desired block and mirrored content with the current
 events, then produces puts, deletes, unchanged objects, and unscheduled outcomes.
@@ -315,8 +317,8 @@ and before an export, and a deleted account's history is deleted with it.
 routes (not their public pages), for logged-in users the app is enabled for. The
 script adds:
 
-- the Tasks sidebar Auto-schedule switch and the Duration row (disabled for
-  tasks Tasks cannot save);
+- the Tasks sidebar Auto-schedule switch and the Duration and Daily limit rows
+  (disabled for tasks Tasks cannot save);
 - task-list badges and not-scheduled warnings;
 - Reconcile and help actions in Tasks and Calendar;
 - latest-run status in the help dialog; and

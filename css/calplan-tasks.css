@@ -444,7 +444,66 @@
 	to { transform: rotate(360deg); }
 }
 
-/* 5. Not scheduled: an icon in the task list and a notice row in the sidebar. */
+/* 5. Daily limit section (tasks with subtasks): a header that folds the
+ *    body; the body's lines share a label column so steppers line up. */
+.property__item.calplan-limit-row {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.calplan-limit-row .calplan-limit-header {
+	cursor: pointer;
+	border-radius: var(--border-radius-element, 6px);
+}
+
+.calplan-limit-row .calplan-limit-header:hover {
+	background-color: var(--color-background-hover);
+}
+
+.calplan-limit-row .calplan-limit-header:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--color-primary-element-light, rgba(0, 130, 201, 0.4));
+	outline: none;
+}
+
+.calplan-limit-summary {
+	margin-inline-end: 4px;
+	color: var(--color-text-maxcontrast);
+	white-space: nowrap;
+}
+
+.calplan-fold-chevron {
+	display: flex;
+	margin-inline-end: 8px;
+	transition: transform 0.15s ease;
+}
+
+.calplan-limit-row.is-open .calplan-fold-chevron {
+	transform: rotate(180deg);
+}
+
+.calplan-limit-body {
+	display: grid;
+	gap: 6px;
+	padding: 2px 8px 10px var(--default-clickable-area, 34px);
+}
+
+.calplan-limit-row:not(.is-open) .calplan-limit-body {
+	display: none;
+}
+
+.calplan-limit-line {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px;
+}
+
+.calplan-limit-label {
+	flex: 0 0 4.5em;
+	padding-inline-start: 4px;
+}
+
+/* 6. Not scheduled: an icon in the task list and a notice row in the sidebar. */
 .calplan-unscheduled-icon {
 	display: inline-flex;
 	align-items: center;

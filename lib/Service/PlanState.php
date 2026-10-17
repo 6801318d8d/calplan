@@ -16,9 +16,9 @@ use OCA\AutoSchedule\Model\WorkingHours;
 
 /**
  * The state of one scheduling pass (SchedulerService::scheduleDetailed): the
- * free working-hours pool and what each day has used of the daily cap and the
- * blocks-per-day limit. Days are always the user's days, in the timezone of
- * *now*.
+ * free working-hours pool and what each day has used of the daily cap, the
+ * blocks-per-day limit and every task's limit groups. Days are always the
+ * user's days, in the timezone of *now*.
  *
  * @internal
  */
@@ -29,6 +29,10 @@ final class PlanState {
 	public array $dailyMinutes = [];
 	/** @var array<string,int> blocks per day */
 	public array $dailyBlocks = [];
+	/** @var array<string, array<string,int>> block minutes per limit group and day */
+	public array $groupMinutes = [];
+	/** @var array<string, array<string,int>> blocks per limit group and day */
+	public array $groupBlocks = [];
 	/** @var BusyBlock[] blocks placed so far, widened by the task gap (for DTSTART windows) */
 	public array $placed = [];
 
@@ -54,10 +58,19 @@ final class PlanState {
 		return $t->setTimezone($this->tz)->format('Y-m-d');
 	}
 
-	/** Count a block of *minutes* on *day* against the daily cap and the blocks-per-day limit. */
-	public function charge(string $day, int $minutes): void {
+	/**
+	 * Count a block of *minutes* on *day* against the daily cap, the
+	 * blocks-per-day limit and the limit groups *groupIds*.
+	 *
+	 * @param string[] $groupIds
+	 */
+	public function charge(string $day, int $minutes, array $groupIds): void {
 		$this->dailyMinutes[$day] = ($this->dailyMinutes[$day] ?? 0) + $minutes;
 		$this->dailyBlocks[$day] = ($this->dailyBlocks[$day] ?? 0) + 1;
+		foreach ($groupIds as $id) {
+			$this->groupMinutes[$id][$day] = ($this->groupMinutes[$id][$day] ?? 0) + $minutes;
+			$this->groupBlocks[$id][$day] = ($this->groupBlocks[$id][$day] ?? 0) + 1;
+		}
 	}
 
 	/** Take *block* (plus the task gap on both sides) out of the free pool and note it as placed. */

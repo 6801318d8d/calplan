@@ -12,7 +12,9 @@ namespace OCA\AutoSchedule\Service;
 use OCA\AutoSchedule\Model\Task;
 
 /**
- * A task tree is planned as a whole. The top task's due date, start and
+ * A task tree is planned as a whole. Settings set on a task apply to the task
+ * and all its subtasks: per-day limits (a course limited to 2 h and 3 blocks a
+ * day caps the sum of its lessons' blocks). The top task's due date, start and
  * priority rule the whole tree, and the subtasks follow each other in the
  * tree's depth-first order, siblings in Tasks' manual order.
  */
@@ -20,14 +22,14 @@ final class TaskLimits {
 	/**
 	 * Attach to every task its relationships within the calendar and what it
 	 * inherits along its RELATED-TO parent chain: the parent's and subtasks'
-	 * titles, the ancestors' UIDs and titles, the top ancestor's due date,
-	 * start and priority, its position in the tree, and whether it is a
-	 * container.
+	 * titles, the limits of itself and each ancestor, the ancestors' UIDs and
+	 * titles, the top ancestor's due date, start and priority, its position in
+	 * the tree, and whether it is a container.
 	 *
 	 * A parent link that closes a cycle (A -> B -> A, or a task naming itself)
 	 * is ignored, so every task of the cycle is planned on its own. A
-	 * completed ancestor ends the chain: a finished course no longer rules the
-	 * lessons left open under it.
+	 * completed ancestor ends the chain: a finished course no longer rules or
+	 * limits the lessons left open under it.
 	 *
 	 * @param Task[] $tasks
 	 * @return Task[]
@@ -62,6 +64,7 @@ final class TaskLimits {
 		$scheduledBelow = [];
 		$out = [];
 		foreach ($tasks as $task) {
+			$groups = [];
 			$ancestors = [];
 			$ancestorTitles = [];
 			$sequence = [];
@@ -75,6 +78,9 @@ final class TaskLimits {
 					$ancestors[] = $node->id;
 					$ancestorTitles[] = $node->title;
 				}
+				if ($node->dailyLimitMinutes > 0 || $node->dailyLimitBlocks > 0) {
+					$groups[] = ['id' => $node->id, 'minutes' => $node->dailyLimitMinutes, 'blocks' => $node->dailyLimitBlocks];
+				}
 			}
 			// The path from the top (open) ancestor down: each level's sibling position.
 			for ($node = $task; $node !== $root; $node = $byUid[$parentOf[$node->id]]) {
@@ -83,9 +89,9 @@ final class TaskLimits {
 			$parentTitle = isset($parentOf[$task->id]) ? $byUid[$parentOf[$task->id]]->title : null;
 			$related = $task->withRelationships($parentTitle, array_map(fn (Task $child) => $child->title, $children[$task->id] ?? []));
 			$hasScheduledSubtasks = self::hasScheduledBelow($task->id, $children, $scheduledBelow);
-			$out[] = $ancestors === [] && !$hasScheduledSubtasks
+			$out[] = $groups === [] && $ancestors === [] && !$hasScheduledSubtasks
 				? $related
-				: $related->withInherited($ancestors, $root->due, $root->priority, $sequence, $ancestorTitles, $hasScheduledSubtasks, $root->start);
+				: $related->withInherited($groups, $ancestors, $root->due, $root->priority, $sequence, $ancestorTitles, $hasScheduledSubtasks, $root->start);
 		}
 		return $out;
 	}

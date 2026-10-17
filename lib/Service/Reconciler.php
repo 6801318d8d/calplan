@@ -50,10 +50,11 @@ class Reconciler {
 	 * @param array<string, array{tasks: Task[], events: CalendarEvent[]}> $plans keyed by calendar
 	 * @param CalendarEvent[] $allEvents every calendar's events (the busy time)
 	 * @param array<string, true> $released task UIDs whose blocks the review released
+	 * @param array<string, string[]> $groupsByTask limit-group ids of every task read, done ones included, by UID
 	 * @param list<array{task: string, day: string, minutes: int}> $priorSpent
 	 * @return array<string, Reconciliation> keyed like $plans
 	 */
-	public function reconcileCalendars(array $plans, WorkingHours $working, array $allEvents, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $eventBufferMinutes = 0, int $dailyTaskCount = 0, array $released = [], array $priorSpent = []): array {
+	public function reconcileCalendars(array $plans, WorkingHours $working, array $allEvents, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $eventBufferMinutes = 0, int $dailyTaskCount = 0, array $released = [], array $groupsByTask = [], array $priorSpent = []): array {
 		$today = $now->format('Y-m-d');
 		$allTasks = [];
 		$pinned = [];
@@ -92,7 +93,7 @@ class Reconciler {
 		$spent = [];
 		foreach (array_merge($priorSpent, ...array_values($spentNow)) as $entry) {
 			if ($entry['day'] === $today && $entry['minutes'] > 0) {
-				$spent[] = ['day' => $today, 'minutes' => $entry['minutes']];
+				$spent[] = ['day' => $today, 'minutes' => $entry['minutes'], 'groups' => $groupsByTask[$entry['task']] ?? []];
 			}
 		}
 		$outcomes = $this->scheduler->scheduleDetailed($allTasks, $working, $this->busy($allEvents, $eventBufferMinutes), $now, $horizonDays, $dailyCap, $taskGapMinutes, $dailyTaskCount, $pinned, $spent);

@@ -48,6 +48,13 @@ class Defaults {
 	public const SLOT_UID_PREFIX = 'calplan-';
 
 	/**
+	 * VTODO properties for a task's per-day limits over itself and all its
+	 * subtasks: total block time (a DURATION value, e.g. PT2H) and block count.
+	 */
+	public const DAILY_MAX_TIME_PROP = 'X-CALPLAN-DAILY-MAX-TIME';
+	public const DAILY_MAX_BLOCKS_PROP = 'X-CALPLAN-DAILY-MAX-BLOCKS';
+
+	/**
 	 * Map a VTODO priority (1 highest … 9 lowest, 0 = no priority) to a
 	 * scheduling weight that falls with the priority: Nextcloud Tasks writes
 	 * high = 1, medium = 5 and low = 9. No priority (0, plan 0.9.1: an absent

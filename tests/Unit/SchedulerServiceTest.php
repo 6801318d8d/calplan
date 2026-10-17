@@ -197,6 +197,56 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame('2026-08-20 00:30', $outcomes['T2']->slot->start->setTimezone($rome)->format('Y-m-d H:i'));
 	}
 
+	/** Four 60-minute lessons under one course whose limits are given as a limit group. */
+	private function lessons(int $limitMinutes, int $limitBlocks): array {
+		$group = [['id' => 'COURSE', 'minutes' => $limitMinutes, 'blocks' => $limitBlocks]];
+		$out = [];
+		foreach (['L1', 'L2', 'L3', 'L4'] as $id) {
+			$out[] = new Task(id: $id, title: $id, estimatedMinutes: 60, autoSchedule: true, parentUid: 'COURSE', limitGroups: $group);
+		}
+		return $out;
+	}
+
+	/** @return array<string, int> placements per day */
+	private function perDay(array $placed): array {
+		$days = [];
+		foreach ($placed as $slot) {
+			if ($slot !== null) {
+				$day = $slot->start->format('Y-m-d');
+				$days[$day] = ($days[$day] ?? 0) + 1;
+			}
+		}
+		ksort($days);
+		return $days;
+	}
+
+	public function testTaskDailyTimeLimitSpreadsSubtasksOverDays(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$placed = $this->scheduler->schedule($this->lessons(120, 0), $this->allWeek(), [], $now);
+		$this->assertSame(['2026-08-19' => 2, '2026-08-20' => 2], $this->perDay($placed));
+	}
+
+	public function testTaskDailyBlockLimitSpreadsSubtasksOverDays(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$placed = $this->scheduler->schedule($this->lessons(0, 1), $this->allWeek(), [], $now);
+		$this->assertSame(['2026-08-19' => 1, '2026-08-20' => 1, '2026-08-21' => 1, '2026-08-22' => 1], $this->perDay($placed));
+	}
+
+	public function testTaskDailyLimitDoesNotBindUnrelatedTasks(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$tasks = array_merge($this->lessons(0, 1), [$this->task('FREE', estimatedMinutes: 60)]);
+		$placed = $this->scheduler->schedule($tasks, $this->allWeek(), [], $now);
+		$this->assertSame('2026-08-19', $placed['FREE']->start->format('Y-m-d'));
+	}
+
+	public function testTaskLongerThanItsGroupLimitReportsTheLimit(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$task = new Task(id: 'BIG', title: 'Big', estimatedMinutes: 180, autoSchedule: true, limitGroups: [['id' => 'COURSE', 'minutes' => 120, 'blocks' => 0]]);
+		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
+		$this->assertNull($outcomes['BIG']->slot);
+		$this->assertSame('task_daily_limit_reached', $outcomes['BIG']->reason);
+	}
+
 	/** @return string[] "MM-DD HH:MM-HH:MM" of the block of *task*, or none */
 	private function blocksOf(array $outcomes, string $id): array {
 		$slot = $outcomes[$id]->slot;
@@ -587,5 +637,14 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 			dailyTaskCount: 1, pinned: $pinned);
 		$this->assertSame(['08-19 09:00-10:00'], $this->blocksOf($outcomes, 'A'));
 		$this->assertSame(['08-20 09:00-10:00'], $this->blocksOf($outcomes, 'B'));
+	}
+
+	public function testSpentTimeCountsAgainstTheGroupLimit(): void {
+		$now = $this->utc('2026-08-19 11:00:00');
+		$limit = [['id' => 'C', 'minutes' => 120, 'blocks' => 0]];
+		$lesson = new Task(id: 'L2', title: 'L2', estimatedMinutes: 60, autoSchedule: true, ancestors: ['C'], limitGroups: $limit, sequence: [1]);
+		$spent = [['day' => '2026-08-19', 'minutes' => 90, 'groups' => ['C']]];
+		$outcomes = $this->scheduler->scheduleDetailed([$lesson], $this->allWeek(), [], $now, spent: $spent);
+		$this->assertSame(['08-20 09:00-10:00'], $this->blocksOf($outcomes, 'L2'));
 	}
 }

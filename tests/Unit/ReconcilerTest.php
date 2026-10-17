@@ -33,7 +33,7 @@ class ReconcilerTest extends AutoScheduleTestCase {
 	 * @param CalendarEvent[] $extraBusyEvents
 	 * @param array<string, true> $released
 	 */
-	private function reconcile(array $tasks, WorkingHours $working, array $events, \DateTimeImmutable $now, int $eventBufferMinutes = 0, array $extraBusyEvents = [], array $released = [], int $dailyCap = 300, array $priorSpent = []): Reconciliation {
+	private function reconcile(array $tasks, WorkingHours $working, array $events, \DateTimeImmutable $now, int $eventBufferMinutes = 0, array $extraBusyEvents = [], array $released = [], int $dailyCap = 300, array $groupsByTask = [], array $priorSpent = []): Reconciliation {
 		return $this->reconciler->reconcileCalendars(
 			['cal' => ['tasks' => $tasks, 'events' => $events]],
 			$working,
@@ -42,6 +42,7 @@ class ReconcilerTest extends AutoScheduleTestCase {
 			dailyCap: $dailyCap,
 			eventBufferMinutes: $eventBufferMinutes,
 			released: $released,
+			groupsByTask: $groupsByTask,
 			priorSpent: $priorSpent,
 		)['cal'];
 	}

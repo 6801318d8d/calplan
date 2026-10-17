@@ -8,9 +8,10 @@ declare(strict_types=1);
  *
  * Pure iCalendar <-> model codec using the Sabre\VObject library bundled with
  * Nextcloud. Tasks are flagged via the standard CATEGORIES value `calplan`;
- * a task's own estimate is its ESTIMATED-DURATION (draft-ietf-calext-ical-tasks).
- * The working-slot VEVENTs we create carry UID `calplan-<taskUID>`, RELATED-TO
- * back to the VTODO and CATEGORIES `calplan-slot`.
+ * a task's own settings use ESTIMATED-DURATION (draft-ietf-calext-ical-tasks)
+ * and X-CALPLAN- properties for its daily limits. The working-slot VEVENTs we
+ * create carry UID `calplan-<taskUID>`, RELATED-TO back to the VTODO and
+ * CATEGORIES `calplan-slot`.
  */
 
 namespace OCA\AutoSchedule\Service;
@@ -84,6 +85,9 @@ class IcalCodec {
 				$estimatedMinutes = $defaultEstimateMinutes;
 			}
 			$percentRaw = self::stringProp($vtodo, 'PERCENT-COMPLETE');
+			// Per-day limits for this task and its subtasks, set in the Tasks
+			// sidebar: a DURATION value and a block count (absent/invalid = none).
+			$limitBlocksRaw = trim(self::stringProp($vtodo, Defaults::DAILY_MAX_BLOCKS_PROP));
 			// Manual order among siblings, as Nextcloud Tasks keeps it: the Apple
 			// X-APPLE-SORT-ORDER, defaulting to seconds since 2001-01-01 of CREATED.
 			$sortRaw = self::stringProp($vtodo, 'X-APPLE-SORT-ORDER');
@@ -107,6 +111,8 @@ class IcalCodec {
 				// across the whole calendar in TaskLimits::resolve (plan 0.9.1).
 				parentUid: self::relatedToParent($vtodo),
 				categories: $categories,
+				dailyLimitMinutes: self::durationToMinutes(self::stringProp($vtodo, Defaults::DAILY_MAX_TIME_PROP)),
+				dailyLimitBlocks: ctype_digit($limitBlocksRaw) ? (int)$limitBlocksRaw : 0,
 				sortOrder: preg_match('/^-?\d+$/', trim($sortRaw)) === 1
 					? (int)trim($sortRaw)
 					: ($created !== null ? $created->getTimestamp() - 978307200 : 0),
