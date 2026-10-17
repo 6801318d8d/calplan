@@ -45,6 +45,7 @@ class ConfigService {
 	public const KEY_EVENT_TITLE_MATCH_MODE = 'event_title_match_mode';
 	public const KEY_PLAN_ACTIVE = 'plan_active';
 	public const KEY_UNSCHEDULED_TASKS = 'unscheduled_tasks';
+	public const KEY_PLANNED_TASKS = 'planned_tasks';
 	public const KEY_PLANNING_DAYS = 'planning_days';
 	public const KEY_MIN_PART_MINUTES = 'min_part_minutes';
 	public const KEY_RESTARTED_TASKS = 'restarted_tasks';
@@ -174,6 +175,31 @@ class ConfigService {
 			return false;
 		}
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_UNSCHEDULED_TASKS, $json);
+		return true;
+	}
+
+	/**
+	 * The blocks the last reconcile planned, for the Tasks UI: by task UID, the
+	 * task's object URI and each block's start and end (Unix timestamps).
+	 *
+	 * @return array<string, array{uri: string, blocks: list<array{0: int, 1: int}>}>
+	 */
+	public function getPlannedTasks(string $userId): array {
+		$decoded = json_decode($this->config->getUserValue($userId, Application::APP_ID, self::KEY_PLANNED_TASKS, '{}'), true);
+		return is_array($decoded) ? $decoded : [];
+	}
+
+	/**
+	 * @param array<string, array{uri: string, blocks: list<array{0: int, 1: int}>}> $tasks
+	 * @return bool whether the stored map changed
+	 */
+	public function setPlannedTasks(string $userId, array $tasks): bool {
+		ksort($tasks, SORT_STRING);
+		$json = (string)json_encode((object)$tasks, JSON_UNESCAPED_SLASHES);
+		if ($json === $this->config->getUserValue($userId, Application::APP_ID, self::KEY_PLANNED_TASKS, '{}')) {
+			return false;
+		}
+		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PLANNED_TASKS, $json);
 		return true;
 	}
 

@@ -16,8 +16,9 @@
  *
  * Tasks-only behavior:
  *   2. Task list — renders a small SVG "CalPlan" icon next to any task that
- *      carries the `calplan` category, read from the rendered tag chips, and a
- *      warning icon next to tasks CalPlan could not schedule.
+ *      carries the `calplan` category, read from the rendered tag chips, the
+ *      time of its next block (for a parent whose subtasks get the blocks,
+ *      theirs), and a warning icon next to tasks CalPlan could not schedule.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
  *      bound to whether the open task has the `calplan` category, plus the
  *      Duration, Split if needed and Daily limit rows. Changes go through
@@ -378,6 +379,37 @@
 		} else if (warning) {
 			warning.remove()
 		}
+
+		// When the row's next block is planned, after the CalPlan icon; for a
+		// parent whose subtasks get the blocks (a course, a module), theirs.
+		var uri = body.getAttribute('task-id')
+		var planned = plannedByUri(uri)
+		var label = null
+		var title = null
+		if (planned && planned.blocks && planned.blocks.length > 0) {
+			label = shortWhen(nextBlock(planned.blocks)[0])
+			title = plannedText(planned.blocks)
+		} else if (anyPlanned) {
+			var plan = subtaskPlan(taskByUri(uri))
+			if (plan) {
+				label = shortWhen(plan.block[0])
+				title = subtaskPlanText(plan)
+			}
+		}
+		var when = body.querySelector('.calplan-planned')
+		var icons2 = body.querySelector('.task-body__icons')
+		if (label !== null && icons2) {
+			if (!when) {
+				when = document.createElement('span')
+				when.className = 'calplan-planned'
+				var icon = icons2.querySelector('.calplan-task-icon')
+				icons2.insertBefore(when, icon ? icon.nextSibling : icons2.firstChild)
+			}
+			if (when.textContent !== label) when.textContent = label
+			if (when.title !== title) when.title = title
+		} else if (when) {
+			when.remove()
+		}
 	}
 
 	function scanTaskList(root) {
@@ -397,6 +429,10 @@
 	 */
 	var unscheduledTasks = {}
 	var unscheduledUris = {}
+	// Task UID => {uri, blocks: [[start, end], ...]} (Unix seconds): when each task is planned.
+	var plannedTasks = {}
+	var plannedUris = {}
+	var anyPlanned = false
 	var latestReconcileRun = null
 	var statusSeq = 0
 	var appliedStatusSeq = 0
@@ -434,6 +470,7 @@
 		appliedStatusSeq = seq
 		if (data.lastRun) latestReconcileRun = data.lastRun
 		if (data.unscheduledTasks) setUnscheduled(data.unscheduledTasks)
+		if (data.plannedTasks) setPlanned(data.plannedTasks)
 		if (data.rewrittenTasks) reloadRewrittenTasks(data.rewrittenTasks)
 	}
 
@@ -467,6 +504,117 @@
 		}
 		scanTaskList(document)
 		ensureSidebarCheckbox()
+	}
+
+	function setPlanned(map) {
+		var next = map && typeof map === 'object' && !Array.isArray(map) ? map : {}
+		if (JSON.stringify(next) === JSON.stringify(plannedTasks)) return
+		plannedTasks = next
+		plannedUris = {}
+		anyPlanned = false
+		for (var uid in next) {
+			if (Object.prototype.hasOwnProperty.call(next, uid) && next[uid] && next[uid].uri) plannedUris[next[uid].uri] = next[uid]
+			anyPlanned = true
+		}
+		scanTaskList(document)
+		ensureSidebarCheckbox()
+	}
+
+	function plannedByUri(uri) {
+		return uri && Object.prototype.hasOwnProperty.call(plannedUris, uri) ? plannedUris[uri] : null
+	}
+
+	/** The planned blocks of *task* itself, or null. */
+	function ownPlanned(task) {
+		var entry = task && Object.prototype.hasOwnProperty.call(plannedTasks, task.uid) ? plannedTasks[task.uid] : null
+		return entry && entry.blocks && entry.blocks.length > 0 && (!entry.uri || !task.uri || entry.uri === task.uri) ? entry : null
+	}
+
+	/** The block still to come or under way, else the last one. */
+	function nextBlock(blocks) {
+		var now = Date.now() / 1000
+		for (var i = 0; i < blocks.length; i++) {
+			if (blocks[i][1] > now) return blocks[i]
+		}
+		return blocks[blocks.length - 1]
+	}
+
+	function pad2(n) { return (n < 10 ? '0' : '') + n }
+
+	function isoDay(date) { return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) }
+
+	function hhmm(date) { return pad2(date.getHours()) + ':' + pad2(date.getMinutes()) }
+
+	/** A block start for the task list: "today 16:15", "tomorrow 09:00", "Mon 16:15", else "2026-10-25 09:00". */
+	function shortWhen(seconds) {
+		var date = new Date(seconds * 1000)
+		var today = new Date()
+		today.setHours(0, 0, 0, 0)
+		var days = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - today) / 86400000)
+		if (days === 0) return t('today {time}', { time: hhmm(date) })
+		if (days === 1) return t('tomorrow {time}', { time: hhmm(date) })
+		if (days > 1 && days < 7) {
+			var weekday = ''
+			try {
+				var locale = (window.OC && typeof OC.getLanguage === 'function' && OC.getLanguage()) || undefined
+				weekday = date.toLocaleDateString(locale, { weekday: 'short' })
+			} catch (e) {}
+			if (weekday) return weekday + ' ' + hhmm(date)
+		}
+		return isoDay(date) + ' ' + hhmm(date)
+	}
+
+	/** "2026-10-18 16:15–16:27", with the end's day when it is another one. */
+	function blockText(block) {
+		var start = new Date(block[0] * 1000)
+		var end = new Date(block[1] * 1000)
+		return isoDay(start) + ' ' + hhmm(start) + '–' + (isoDay(end) === isoDay(start) ? '' : isoDay(end) + ' ') + hhmm(end)
+	}
+
+	/** "Planned: 2026-10-18 16:15–16:27; 2026-10-19 09:00–09:45". */
+	function plannedText(blocks) {
+		return t('Planned: {blocks}', { blocks: blocks.map(blockText).join('; ') })
+	}
+
+	/** The Tasks store's task stored at object URI *uri*, or null. */
+	function taskByUri(uri) {
+		var store = vuexStore()
+		if (!uri || !store || !store.getters || typeof store.getters.getTaskByUri !== 'function') return null
+		try { return store.getters.getTaskByUri(uri) || null } catch (e) { return null }
+	}
+
+	/**
+	 * For a parent whose subtasks get the blocks: the subtask whose block is
+	 * under way or comes next (else the one that ended last) with that block,
+	 * how many subtasks are planned, and when the last block ends. Null when
+	 * no subtask is planned. Display only.
+	 */
+	function subtaskPlan(task) {
+		if (!task) return null
+		var now = Date.now() / 1000
+		var next = null
+		var latest = null
+		var count = 0
+		var subs = descendants(task)
+		for (var i = 0; i < subs.length; i++) {
+			var entry = ownPlanned(subs[i])
+			if (!entry) continue
+			count++
+			for (var j = 0; j < entry.blocks.length; j++) {
+				var block = entry.blocks[j]
+				if (block[1] > now && (!next || block[0] < next.block[0])) next = { task: subs[i], block: block }
+				if (!latest || block[1] > latest.block[1]) latest = { task: subs[i], block: block }
+			}
+		}
+		if (count === 0) return null
+		var shown = next || latest
+		return { task: shown.task, block: shown.block, count: count, lastEnd: latest.block[1] }
+	}
+
+	/** "Next subtask: Lesson 1, 2026-11-01 09:00–10:00 · 24 subtasks planned, the last on 2026-11-14". */
+	function subtaskPlanText(plan) {
+		return t('Next subtask: {title}, {block}', { title: plan.task.summary || '', block: blockText(plan.block) }) + ' · ' +
+			n('{count} subtask planned, the last on {day}', '{count} subtasks planned, the last on {day}', plan.count, { day: isoDay(new Date(plan.lastEnd * 1000)) })
 	}
 
 	/** A real problem, not just a task that starts after the planning window. */
@@ -1275,7 +1423,29 @@
 		write: function () { return null },
 	}
 
-	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec, splitRowSpec, limitRowSpec]
+	var ICON_CALENDAR_CLOCK = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M15,13H16.5V15.82L18.94,17.23L18.19,18.53L15,16.69V13M19,8H5V19H9.67C9.24,18.09 9,17.07 9,16A7,7 0 0,1 16,9C17.07,9 18.09,9.24 19,9.67V8M5,21C3.89,21 3,20.1 3,19V5C3,3.89 3.89,3 5,3H6V1H8V3H16V1H18V3H19A2,2 0 0,1 21,5V11.1C22.24,12.36 23,14.09 23,16A7,7 0 0,1 16,23C14.09,23 12.36,22.24 11.1,21H5M16,11.15A4.85,4.85 0 0,0 11.15,16C11.15,18.68 13.32,20.85 16,20.85A4.85,4.85 0 0,0 20.85,16C20.85,13.32 18.68,11.15 16,11.15Z"/></svg>'
+
+	var plannedRowSpec = {
+		className: 'calplan-planned-row',
+		html: function () {
+			return '  <span class="content__icon">' + ICON_CALENDAR_CLOCK + '</span>' +
+				'  <span class="content__name calplan-planned-text"></span>'
+		},
+		placeholders: function () {},
+		visible: function (task) { return ownPlanned(task) !== null || subtaskPlan(task) !== null },
+		read: function (task) {
+			var own = ownPlanned(task)
+			return { text: own ? plannedText(own.blocks) : subtaskPlanText(subtaskPlan(task)) }
+		},
+		render: function (row, value) {
+			var el = row.querySelector('.calplan-planned-text')
+			if (el.textContent !== value.text) el.textContent = value.text
+			if (row.title !== value.text) row.title = value.text
+		},
+		write: function () { return null },
+	}
+
+	var SIDEBAR_ROWS = [noticeRowSpec, plannedRowSpec, durationRowSpec, splitRowSpec, limitRowSpec]
 
 	// Whether the Daily limit section is unfolded: a per-browser preference, closed by default.
 	var LIMIT_OPEN_KEY = 'calplan.dailyLimitOpen'
@@ -1478,7 +1648,7 @@
 	// --- Driver ----------------------------------------------------------
 
 	// Elements CalPlan renders itself; changes inside them never need a pass.
-	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-split-row, .calplan-notice-row, .calplan-task-icon, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
+	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-split-row, .calplan-notice-row, .calplan-planned-row, .calplan-task-icon, .calplan-planned, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
 
 	function isOwnMutation(record) {
 		var node = record.target

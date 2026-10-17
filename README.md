@@ -127,6 +127,11 @@ by default (7–90, **Personal settings → CalPlan → Planning window**).
   tree's depth-first order, siblings in Tasks' manual order ("Sort by:
   Manually", `X-APPLE-SORT-ORDER`, else creation time). Subtasks' own due dates
   and priorities are ignored for scheduling.
+- Tasks shows when each task is planned: the time of its next block beside its
+  CalPlan icon in the list, and all its blocks in a "Planned:" line in the
+  sidebar. A parent whose subtasks get the blocks (a course, a module) shows
+  their next one, and the sidebar names that subtask. Nothing is written to
+  the task for this.
 - Tasks that cannot be placed are flagged in Tasks: a warning icon in the
   list and a "Not scheduled" line with the reason in the sidebar (a parent
   shows how many of its subtasks are not scheduled).

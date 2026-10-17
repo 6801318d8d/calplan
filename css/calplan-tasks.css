@@ -5,7 +5,16 @@
  * CalPlan Tasks-frontend injection styles.
  */
 
-/* 1. Task list item badge/icon */
+/* 1. Task list item badge/icon, and when its next block is planned */
+.calplan-planned {
+	display: inline-flex;
+	align-items: center;
+	margin-inline: 4px;
+	color: var(--color-text-maxcontrast);
+	font-size: 0.9em;
+	white-space: nowrap;
+}
+
 .calplan-task-icon {
 	display: inline-flex;
 	align-items: center;
@@ -535,6 +544,41 @@
 
 .property__item.calplan-notice-row[hidden] {
 	display: none !important;
+}
+
+/* The planned blocks: a plain line like the notice, in the text color. */
+.property__item.calplan-planned-row {
+	display: flex;
+	width: 100%;
+	padding: 0 6px;
+	border-bottom: 1px solid var(--color-border);
+	color: var(--color-text-lighter);
+}
+
+.property__item.calplan-planned-row[hidden] {
+	display: none !important;
+}
+
+.calplan-planned-row .item__content {
+	display: flex;
+	align-items: center;
+	gap: 0 4px;
+	min-width: 0;
+	min-height: var(--default-clickable-area);
+}
+
+.calplan-planned-row .content__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--default-clickable-area);
+	min-width: var(--default-clickable-area);
+}
+
+.calplan-planned-row .content__name {
+	white-space: normal;
+	line-height: 1.3;
+	padding-block: 6px;
 }
 
 .calplan-notice-row .item__content {

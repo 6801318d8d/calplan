@@ -289,6 +289,7 @@ class ReconcileService {
 			}
 		}
 		$totals = ['put' => 0, 'delete' => 0, 'unchanged' => 0, 'putFailures' => 0, 'deleteFailures' => 0];
+		$plannedTasks = [];
 		$unscheduledReasons = [];
 		$spent = [];
 		$applyNs = 0;
@@ -297,6 +298,12 @@ class ReconcileService {
 			$tasksById = [];
 			foreach ($plans[$uri]['tasks'] as $task) {
 				$tasksById[$task->id] = $task;
+			}
+			foreach ($recon->blocks as $taskId => $slots) {
+				$plannedTasks[(string)$taskId] = [
+					'uri' => (string)($tasksById[$taskId]->objectUri ?? ''),
+					'blocks' => array_map(fn ($slot) => [$slot->start->getTimestamp(), $slot->end->getTimestamp()], $slots),
+				];
 			}
 			foreach ($recon->unscheduled as $taskId => $reason) {
 				$unscheduledTasks[(string)$taskId] = ['reason' => $reason, 'uri' => (string)($tasksById[$taskId]->objectUri ?? '')];
@@ -341,8 +348,10 @@ class ReconcileService {
 
 		// Lets the event-change listener and cron skip users with nothing to plan.
 		$this->config->setPlanActive($userId, $plans !== []);
-		// Which tasks could not be placed and why, for the Tasks UI warnings.
+		// Which tasks could not be placed and why, and when the others are
+		// planned, for the Tasks UI.
 		$unscheduledChanged = $this->config->setUnscheduledTasks($userId, $unscheduledTasks);
+		$this->config->setPlannedTasks($userId, $plannedTasks);
 		$this->config->addRewrittenTasks($userId, $rewritten, $now->getTimestamp());
 
 		$report = [
