@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace OCA\AutoSchedule\AppInfo;
 
 use OCA\AutoSchedule\Listener\CalendarObjectChangeListener;
+use OCA\AutoSchedule\Listener\UserDeletedListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -24,6 +25,7 @@ use OCP\Calendar\Events\CalendarObjectMovedEvent;
 use OCP\Calendar\Events\CalendarObjectMovedToTrashEvent;
 use OCP\Calendar\Events\CalendarObjectRestoredEvent;
 use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
+use OCP\User\Events\UserDeletedEvent;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'calplan';
@@ -52,6 +54,7 @@ class Application extends App implements IBootstrap {
 		$context->registerEventListener(CalendarObjectMovedToTrashEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectRestoredEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectMovedEvent::class, CalendarObjectChangeListener::class);
+		$context->registerEventListener(UserDeletedEvent::class, UserDeletedListener::class);
 	}
 
 	/** @psalm-suppress UndefinedClass */
