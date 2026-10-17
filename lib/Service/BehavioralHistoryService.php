@@ -25,19 +25,27 @@ class BehavioralHistoryService {
 	) {
 	}
 
-	public function recordScheduled(string $userId, Task $task, Slot $slot, \DateTimeImmutable $at): void {
+	/**
+	 * One record for a task's plan: all its blocks (the parts of a split task
+	 * together, the task's duration once).
+	 *
+	 * @param Slot[] $slots in time order
+	 */
+	public function recordScheduled(string $userId, Task $task, array $slots, \DateTimeImmutable $at): void {
 		// Nothing is computed (no title shape, no HMAC, no salt) while history is off.
-		if (!$this->config->isBehavioralHistoryEnabled($userId)) {
+		if ($slots === [] || !$this->config->isBehavioralHistoryEnabled($userId)) {
 			return;
 		}
 		$titleShape = self::titleShapeMetadata($task->title);
-		$this->appendChanged($userId, $task->id, 'scheduled|' . $slot->start->format(DATE_ATOM) . '|' . $slot->end->format(DATE_ATOM) . '|' . json_encode($titleShape), [
+		$times = implode(',', array_map(fn (Slot $slot) => $slot->start->format(DATE_ATOM) . '/' . $slot->end->format(DATE_ATOM), $slots));
+		$this->appendChanged($userId, $task->id, 'scheduled|' . $times . '|' . json_encode($titleShape), [
 			'v' => 1,
 			'at' => $at->format(DATE_ATOM),
 			'type' => 'scheduled',
 			'task' => $this->taskKey($userId, $task->id),
-			'start' => $slot->start->format(DATE_ATOM),
-			'end' => $slot->end->format(DATE_ATOM),
+			'start' => $slots[0]->start->format(DATE_ATOM),
+			'end' => end($slots)->end->format(DATE_ATOM),
+			'parts' => count($slots),
 			'duration_minutes' => $task->estimatedMinutes,
 			'priority' => $task->priority,
 			'has_due' => $task->due !== null,

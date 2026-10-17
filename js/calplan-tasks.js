@@ -20,7 +20,7 @@
  *      warning icon next to tasks CalPlan could not schedule.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
  *      bound to whether the open task has the `calplan` category, plus the
- *      Duration and Daily limit rows. Changes go through
+ *      Duration, Split if needed and Daily limit rows. Changes go through
  *      Tasks' own Vuex actions (so they persist through Tasks' CalDAV sync);
  *      the server re-plans after each write.
  *
@@ -366,7 +366,7 @@
 		var entry = unscheduledByUri(body.getAttribute('task-id'))
 		var warning = body.querySelector('.calplan-unscheduled-icon')
 		if (isWarning(entry)) {
-			var text = t('Not scheduled: {reason}', { reason: reasonText(entry.reason) })
+			var text = t('Not scheduled: {reason}', { reason: reasonText(entry.reason, null) })
 			var iconBox = body.querySelector('.task-body__icons')
 			if (!warning && iconBox) {
 				warning = document.createElement('span')
@@ -417,6 +417,8 @@
 			duplicate_uid: t('another calendar has a task with the same UID; only that one is planned'),
 		}
 	}
+	// Reasons that "Split if needed" can fix.
+	var SPLIT_HELPS = { task_daily_limit_reached: true, duration_exceeds_daily_cap: true, duration_exceeds_openings: true }
 
 	function loadReconcileStatus() {
 		var seq = ++statusSeq
@@ -482,18 +484,22 @@
 		return entry && (!entry.uri || !task.uri || entry.uri === task.uri) ? entry : null
 	}
 
-	function reasonText(reason) {
-		return reasonTexts()[reason] || String(reason).replace(/_/g, ' ')
+	function reasonText(reason, task) {
+		var text = reasonTexts()[reason] || String(reason).replace(/_/g, ' ')
+		if (SPLIT_HELPS[reason] && task && !flagOn(task, SPLIT_PROP) && !ancestorFlagOn(task, SPLIT_PROP)) {
+			text = t('{reason} (turn on Split if needed)', { reason: text })
+		}
+		return text
 	}
 
 	/** The sidebar notice for *task*, or null. */
 	function noticeText(task) {
 		if (!task) return null
 		var own = ownEntry(task)
-		if (isWarning(own)) return t('Not scheduled: {reason}', { reason: reasonText(own.reason) })
+		if (isWarning(own)) return t('Not scheduled: {reason}', { reason: reasonText(own.reason, task) })
 		var count = descendants(task).filter(function (sub) { return isWarning(ownEntry(sub)) }).length
 		if (count > 0) return n('{count} subtask is not scheduled', '{count} subtasks are not scheduled', count)
-		if (own) return t('Not planned yet: {reason}', { reason: reasonText(own.reason) })
+		if (own) return t('Not planned yet: {reason}', { reason: reasonText(own.reason, task) })
 		return null
 	}
 
@@ -734,6 +740,7 @@
 			'  <div class="calplan-help-header"><h2 id="calplanHelpTitle">' + escapeHtml(t('CalPlan help')) + '</h2><button type="button" class="calplan-help-close" aria-label="' + escapeHtml(t('Close')) + '">×</button></div>' +
 			'  <p>' + t('<strong>CalPlan finds time for your Nextcloud tasks.</strong> Auto-schedule adds the standard <code>calplan</code> category and creates a derived locked event in the same calendar.') + '</p>' +
 			'  <p>' + t('On a task with subtasks, the switch turns Auto-schedule on or off for all its subtasks. While some of them are still to be scheduled or awaiting review, they get the blocks, not the parent; once they are all done, or none has Auto-schedule on, the parent is planned like any task. Its <strong>Daily limit</strong> caps the block time and/or the number of blocks per day for itself and all its subtasks together (limits of nested parents all apply).') + '</p>' +
+			'  <p>' + t('<strong>Split if needed</strong>: CalPlan fills the earliest free time with the task and splits it where it does not fit whole, in parts named “Title (1/2)”, “Title (2/2)”… (minimum part length in CalPlan settings, 30 minutes by default). On a task with subtasks it applies to all of them.') + '</p>' +
 			'  <h3>' + escapeHtml(t('What Reconcile does')) + '</h3>' +
 			'  <p>' + t('Reconcile rereads your flagged tasks and busy calendar events, recomputes the current plan, writes new or changed task blocks, and removes blocks for completed, paused, or no-longer-fitting tasks. A block that has already started stays where it is.') + '</p>' +
 			'  <p>' + t('After a block ends and its pacing grace period passes, an incomplete task receives the filterable <code>calplan-review</code> tag — CalPlan’s <strong>“Is complete?”</strong> review marker. Depending on your setting, CalPlan either tries another time or removes Auto-schedule and pauses.') + '</p>' +
@@ -790,6 +797,11 @@
 		if (row.classList.contains('is-disabled') !== !!disabled) row.classList.toggle('is-disabled', !!disabled)
 		var box = row.querySelector('.calplan-switch-input')
 		if (box && box.checked !== on) box.checked = on
+	}
+
+	function switchOn(row) {
+		var switchEl = row.querySelector('[role="switch"]')
+		return !!switchEl && switchEl.getAttribute('aria-checked') === 'true'
 	}
 
 	/** The tags *task* should carry with the flag on/off (on also clears a stale review tag). */
@@ -901,7 +913,7 @@
 		return row
 	}
 
-	// --- 3. Sidebar Duration and Daily limit rows -------------------------
+	// --- 3. Sidebar Duration, Split and Daily limit rows ------------------
 
 	/*
 	 * The Tasks app has no duration field. This one stores the block length in
@@ -1040,7 +1052,36 @@
 		var value = {}
 		if (spec.time) value.minutes = rowMinutes(row)
 		if (spec.count) value.count = partNumber(row, 'count')
+		if (spec.flag) value.on = switchOn(row)
 		return value
+	}
+
+	/** Set (TRUE) or remove a flag property; true when it changed. */
+	function setFlagProp(task, name, on) {
+		var current = task.vtodo.getFirstPropertyValue(name)
+		var changed = on ? String(current || '').toUpperCase() !== 'TRUE' : current != null
+		if (changed) {
+			task.vtodo.removeAllProperties(name)
+			if (on) task.vtodo.addPropertyWithValue(name, 'TRUE')
+		}
+		return changed
+	}
+
+	function flagOn(task, name) {
+		return ['TRUE', 'YES', '1'].indexOf(String(propValue(task, name) || '').trim().toUpperCase()) !== -1
+	}
+
+	/** Whether any ancestor of *task* has the flag (Tasks' getParentTask getter; cycle-safe). */
+	function ancestorFlagOn(task, name) {
+		var store = vuexStore()
+		var getParent = store && store.getters && store.getters.getParentTask
+		if (typeof getParent !== 'function') return false
+		var seen = [task]
+		for (var node = getParent(task); node && seen.indexOf(node) === -1; node = getParent(node)) {
+			if (flagOn(node, name)) return true
+			seen.push(node)
+		}
+		return false
 	}
 
 	/** Set (minutes > 0) or remove a DURATION-valued property; true when it changed. */
@@ -1177,6 +1218,46 @@
 		},
 	}
 
+	var SPLIT_PROP = 'x-calplan-splittable'
+	var ICON_SPLIT = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M14,4L16.29,6.29L13.41,9.17L14.83,10.59L17.71,7.71L20,10V4M10,4H4V10L6.29,7.71L11,12.41V20H13V11.59L7.71,6.29"/></svg>'
+
+	var splitRowSpec = {
+		// Styled like the Auto-schedule switch row.
+		className: 'calplan-toggle-row calplan-split-row',
+		flag: true,
+		wrapped: true,
+		html: function () {
+			return '<div class="item__content" role="switch" tabindex="0" aria-checked="false" aria-label="' + escapeHtml(t('Split if needed')) + '">' +
+				'  <span class="content__icon">' + ICON_SPLIT + '</span>' +
+				'  <span class="content__name">' + escapeHtml(t('Split if needed')) + '</span>' +
+				'  <span class="calplan-split-inherited">' + escapeHtml(t('on for a parent')) + '</span>' +
+				'  <span class="calplan-switch-wrapper"><input type="checkbox" class="calplan-switch-input" tabindex="-1" aria-hidden="true" /><span class="calplan-switch-slider"></span></span>' +
+				'</div>'
+		},
+		placeholders: function (row) {
+			row.title = t('When no single free slot fits this task, CalPlan fills the earliest free time with it and splits it where it does not fit whole, in parts named "Title (1/2)", "Title (2/2)"… (minimum part length in CalPlan settings). On a task with subtasks it applies to all of them.')
+		},
+		setup: function (row) {
+			bindSwitch(row, row.querySelector('[role="switch"]'), function () {
+				var task = openTask()
+				if (!task || isReadOnly(task)) return
+				splitRowSpec.render(row, { on: !switchOn(row), inherited: ancestorFlagOn(task, SPLIT_PROP) }, false)
+				commitRow(row, splitRowSpec, task)
+			})
+		},
+		visible: function (task) { return !!task },
+		read: function (task) { return { on: flagOn(task, SPLIT_PROP), inherited: ancestorFlagOn(task, SPLIT_PROP) } },
+		/** The switch shows the task's own flag; "on for a parent" tells when an ancestor's applies anyway. */
+		render: function (row, value, disabled) {
+			renderSwitch(row, value.on, disabled)
+			var inherited = !!value.inherited && !value.on
+			if (row.classList.contains('is-inherited') !== inherited) row.classList.toggle('is-inherited', inherited)
+		},
+		write: function (task, value) {
+			return setFlagProp(task, SPLIT_PROP, value.on) ? {} : null
+		},
+	}
+
 	var noticeRowSpec = {
 		className: 'calplan-notice-row',
 		html: function () {
@@ -1194,7 +1275,7 @@
 		write: function () { return null },
 	}
 
-	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec, limitRowSpec]
+	var SIDEBAR_ROWS = [noticeRowSpec, durationRowSpec, splitRowSpec, limitRowSpec]
 
 	// Whether the Daily limit section is unfolded: a per-browser preference, closed by default.
 	var LIMIT_OPEN_KEY = 'calplan.dailyLimitOpen'
@@ -1397,7 +1478,7 @@
 	// --- Driver ----------------------------------------------------------
 
 	// Elements CalPlan renders itself; changes inside them never need a pass.
-	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-notice-row, .calplan-task-icon, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
+	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-split-row, .calplan-notice-row, .calplan-task-icon, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
 
 	function isOwnMutation(record) {
 		var node = record.target

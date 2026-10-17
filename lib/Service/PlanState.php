@@ -47,6 +47,7 @@ final class PlanState {
 		public readonly int $dailyCap,
 		public readonly int $dailyTaskCount,
 		public readonly int $taskGapMinutes,
+		public readonly int $minPartMinutes,
 		array $slots,
 	) {
 		$this->tz = $now->getTimezone();
@@ -80,6 +81,16 @@ final class PlanState {
 			self::plusMinutes($block->start, -$this->taskGapMinutes),
 			self::plusMinutes($block->end, $this->taskGapMinutes),
 		);
+	}
+
+	/** Make this state what *trial* (a clone this pass tried a placement on) ended with. */
+	public function adopt(self $trial): void {
+		$this->slots = $trial->slots;
+		$this->dailyMinutes = $trial->dailyMinutes;
+		$this->dailyBlocks = $trial->dailyBlocks;
+		$this->groupMinutes = $trial->groupMinutes;
+		$this->groupBlocks = $trial->groupBlocks;
+		$this->placed = $trial->placed;
 	}
 
 	/**

@@ -94,6 +94,12 @@ class IcalCodecTest extends TestCase {
 		$this->assertFalse(IcalCodec::parseTasks($this->vtodo("DTSTART:20260820T090000Z\r\n"))[0]->startAllDay);
 	}
 
+	public function testParseTasksReadsSplittable(): void {
+		$this->requireSabre();
+		$this->assertTrue(IcalCodec::parseTasks($this->vtodo("X-CALPLAN-SPLITTABLE:TRUE\r\n"))[0]->splittable);
+		$this->assertFalse(IcalCodec::parseTasks($this->vtodo())[0]->splittable);
+	}
+
 	public function testParseTasksReadsTheManualSortOrder(): void {
 		$this->requireSabre();
 		$this->assertSame(42, IcalCodec::parseTasks($this->vtodo("X-APPLE-SORT-ORDER:42\r\nCREATED:20261016T200000Z\r\n"))[0]->sortOrder);
@@ -101,18 +107,22 @@ class IcalCodecTest extends TestCase {
 		$this->assertSame(60, IcalCodec::parseTasks($this->vtodo("CREATED:20010101T000100Z\r\n"))[0]->sortOrder);
 	}
 
-	public function testBlockRoundTrip(): void {
+	public function testPartBlockRoundTrip(): void {
 		$this->requireSabre();
-		$task = new \OCA\AutoSchedule\Model\Task('task-1', 'Do a thing', estimatedMinutes: 60, autoSchedule: true);
+		$task = new \OCA\AutoSchedule\Model\Task('task-1', 'Do a thing', estimatedMinutes: 120, autoSchedule: true);
 		$start = new \DateTimeImmutable('2026-08-20 09:00:00', new \DateTimeZone('UTC'));
 		$end = new \DateTimeImmutable('2026-08-20 10:00:00', new \DateTimeZone('UTC'));
-		$ics = IcalCodec::buildSlotEvent($task, $start, $end, $start);
-		$this->assertStringContainsString("UID:calplan-task-1\r\n", $ics);
-		// Block times are written in UTC, so no VTIMEZONE is needed.
-		$this->assertStringContainsString("DTSTART:20260820T090000Z\r\n", $ics);
+		$ics = IcalCodec::buildSlotEvent($task, $start, $end, $start, 2, 3);
+		$this->assertStringContainsString("UID:calplan-task-1~p2\r\n", $ics);
+		$this->assertStringContainsString("X-CALPLAN-PART:2/3\r\n", $ics);
 		$events = IcalCodec::parseEvents($ics);
 		$this->assertSame('task-1', $events[0]->autoScheduleTaskUid);
-		$this->assertStringEndsWith('Do a thing', $events[0]->summary);
+		$this->assertSame('task-1~p2', $events[0]->slotKey());
+		// Block times are written in UTC, so no VTIMEZONE is needed.
+		$this->assertStringContainsString("DTSTART:20260820T090000Z\r\n", $ics);
+		$this->assertStringEndsWith('Do a thing (2/3)', $events[0]->summary);
+		$this->assertSame('task-1', IcalCodec::taskUidOfSlotKey('task-1~p2'));
+		$this->assertSame('task-1', IcalCodec::taskUidOfSlotKey('task-1'));
 	}
 
 	public function testParseTasksDurationHoursAndMinutes(): void {

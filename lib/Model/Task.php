@@ -47,6 +47,10 @@ class Task {
 		 * @var list<array{id: string, minutes: int, blocks: int}>
 		 */
 		public readonly array $limitGroups = [],
+		/** This task's own "split if needed" flag (X-CALPLAN-SPLITTABLE). */
+		public readonly bool $splittable = false,
+		/** Whether this task or any ancestor allows splitting; resolved with $limitGroups. */
+		public readonly bool $canSplit = false,
 		/**
 		 * UIDs of the parent chain, nearest first; resolved with $limitGroups.
 		 * Tasks sharing an ancestor are placed in sequence (SchedulerService).
@@ -99,6 +103,11 @@ class Task {
 			'rootDue' => $this->rootDue?->setTimezone($tz),
 			'rootStart' => $this->rootStart?->setTimezone($tz),
 		]);
+	}
+
+	/** A copy needing *minutes* of block time (what is left of a split task). */
+	public function withEstimatedMinutes(int $minutes): self {
+		return $this->with(['estimatedMinutes' => $minutes]);
 	}
 
 	/** A copy flagged for scheduling (a task of a calendar flagged as a whole). */
@@ -163,9 +172,10 @@ class Task {
 	 * @param list<int> $sequence
 	 * @param list<string> $ancestorTitles
 	 */
-	public function withInherited(array $limitGroups, array $ancestors = [], ?\DateTimeImmutable $rootDue = null, int $rootPriority = 0, array $sequence = [], array $ancestorTitles = [], bool $hasScheduledSubtasks = false, ?\DateTimeImmutable $rootStart = null): self {
+	public function withInherited(array $limitGroups, bool $canSplit, array $ancestors = [], ?\DateTimeImmutable $rootDue = null, int $rootPriority = 0, array $sequence = [], array $ancestorTitles = [], bool $hasScheduledSubtasks = false, ?\DateTimeImmutable $rootStart = null): self {
 		return $this->with([
 			'limitGroups' => array_values($limitGroups),
+			'canSplit' => $canSplit,
 			'ancestors' => array_values($ancestors),
 			'rootDue' => $rootDue,
 			'rootPriority' => $rootPriority,

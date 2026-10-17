@@ -270,6 +270,7 @@ class ReconcileService {
 			taskGapMinutes: $policy['taskGapMinutes'],
 			eventBufferMinutes: $policy['eventBufferMinutes'],
 			dailyTaskCount: $policy['dailyTaskCount'],
+			minPartMinutes: $policy['minPartMinutes'],
 			released: $released,
 			groupsByTask: $groupsByTask,
 			priorSpent: $this->config->getSpentToday($userId, $today),
@@ -277,14 +278,14 @@ class ReconcileService {
 		$scheduleNs = hrtime(true) - $phaseStarted;
 
 		// 3. Per calendar: write its blocks and record the outcome. A task whose
-		// block moves to another calendar is still placed, not removed.
+		// blocks move to another calendar is still placed, not removed.
 		$stillPlaced = [];
 		foreach ($recons as $recon) {
 			foreach ($recon->toPut as $put) {
 				$stillPlaced[$put[0]->id] = true;
 			}
-			foreach ($recon->unchanged as $uid) {
-				$stillPlaced[$uid] = true;
+			foreach ($recon->unchanged as $key) {
+				$stillPlaced[IcalCodec::taskUidOfSlotKey($key)] = true;
 			}
 		}
 		$totals = ['put' => 0, 'delete' => 0, 'unchanged' => 0, 'putFailures' => 0, 'deleteFailures' => 0];
@@ -311,7 +312,7 @@ class ReconcileService {
 			$applied = $this->apply($userId, $calendarId, $recon, $now, $stillPlaced);
 			$applyNs += hrtime(true) - $phaseStarted;
 			foreach ($recon->spent as $block) {
-				if (isset($applied['done'][$block['task']])) {
+				if (isset($applied['done'][$block['key']])) {
 					$spent[] = $block;
 				}
 			}
@@ -469,7 +470,8 @@ class ReconcileService {
 	 * @return Task[]
 	 */
 	private function reviewExpiredTasks(string $userId, string $calendarId, array $tasks, array $events, array $busyEvents, \DateTimeImmutable $now, array &$restarted, array &$released, array &$rewritten): array {
-		// A block an event took did not happen, so it is planned anew, not reviewed.
+		// A split task is reviewed when its last part has ended; a block an
+		// event took did not happen, so it is planned anew, not reviewed.
 		$lastBlock = [];
 		foreach ($events as $event) {
 			$uid = $event->autoScheduleTaskUid;
@@ -530,44 +532,54 @@ class ReconcileService {
 	 * not logged as removals.
 	 *
 	 * @param array<string, true> $stillPlaced
-	 * @return array{putFailures:int, deleteFailures:int, done: array<string, true>} done = task UIDs whose block was written or deleted
+	 * @return array{putFailures:int, deleteFailures:int, done: array<string, true>} done = block keys written or deleted
 	 */
 	private function apply(string $userId, string $calendarId, Reconciliation $recon, \DateTimeImmutable $now, array $stillPlaced): array {
 		$putFailures = 0;
 		$deleteFailures = 0;
 		$done = [];
-		foreach ($recon->toPut as [$task, $slot]) {
+		$placedBlocks = [];
+		foreach ($recon->toPut as [$task, $slot, $part, $partCount]) {
+			$key = IcalCodec::slotKey($task->id, $part);
 			// Best-effort: a single bad write must not abort the whole reconcile
 			// and leave every other slot un-upgraded. Count it and let the next
 			// reconcile retry (plan 0.9.1).
 			try {
-				$this->repo->putSlot($calendarId, $task, $slot, $now, $recon->objectUris[$task->id] ?? null);
+				$this->repo->putSlot($calendarId, $task, $slot, $now, $part, $partCount, $recon->objectUris[$key] ?? null);
 			} catch (\Throwable $e) {
 				$putFailures++;
 				$this->logger->warning('CalPlan could not write a block', ['app' => 'calplan', 'exception' => $e]);
 				continue;
 			}
-			$done[$task->id] = true;
+			$done[$key] = true;
+			$placedBlocks[$task->id] = $task;
+		}
+		// One record per task with all its blocks, even when only some parts moved.
+		foreach ($placedBlocks as $taskId => $task) {
 			try {
-				$this->history->recordScheduled($userId, $task, $slot, $now);
+				$this->history->recordScheduled($userId, $task, $recon->blocks[$taskId] ?? [], $now);
 			} catch (\Throwable $_) {
 				// Optional observation data must never change the calendar outcome.
 			}
 		}
-		foreach ($recon->toDelete as $taskUid) {
+		$removed = [];
+		foreach ($recon->toDelete as $slotKey) {
 			try {
-				$this->repo->deleteSlot($calendarId, $recon->objectUris[$taskUid] ?? CalendarRepository::slotObjectUri($taskUid));
+				$this->repo->deleteSlot($calendarId, $recon->objectUris[$slotKey] ?? CalendarRepository::slotObjectUri($slotKey));
 			} catch (\Throwable $e) {
 				$deleteFailures++;
 				$this->logger->warning('CalPlan could not remove a block', ['app' => 'calplan', 'exception' => $e]);
 				continue;
 			}
-			$done[$taskUid] = true;
-			if (isset($stillPlaced[$taskUid])) {
-				continue;
+			$done[$slotKey] = true;
+			$taskUid = IcalCodec::taskUidOfSlotKey($slotKey);
+			if (!isset($stillPlaced[$taskUid])) {
+				$removed[$taskUid] = true;
 			}
+		}
+		foreach (array_keys($removed) as $taskUid) {
 			try {
-				$this->history->recordRemoved($userId, $taskUid, $now);
+				$this->history->recordRemoved($userId, (string)$taskUid, $now);
 			} catch (\Throwable $_) {
 				// Optional observation data must never change the calendar outcome.
 			}

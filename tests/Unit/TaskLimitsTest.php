@@ -38,6 +38,19 @@ class TaskLimitsTest extends TestCase {
 		$this->assertSame([], $groups['OTHER']);
 	}
 
+	public function testSplittingIsInheritedBySubtasks(): void {
+		$tasks = [];
+		foreach (TaskLimits::resolve([
+			new Task(id: 'COURSE', title: 'Course', splittable: true),
+			new Task(id: 'LESSON', title: 'Lesson', parentUid: 'MODULE'),
+			new Task(id: 'MODULE', title: 'Module', parentUid: 'COURSE'),
+			new Task(id: 'OTHER', title: 'Other'),
+		]) as $task) {
+			$tasks[$task->id] = $task->canSplit;
+		}
+		$this->assertSame(['COURSE' => true, 'LESSON' => true, 'MODULE' => true, 'OTHER' => false], $tasks);
+	}
+
 	public function testAncestorsAreResolvedNearestFirst(): void {
 		$ancestors = [];
 		foreach (TaskLimits::resolve([

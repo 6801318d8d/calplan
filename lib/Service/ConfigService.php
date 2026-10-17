@@ -46,10 +46,13 @@ class ConfigService {
 	public const KEY_PLAN_ACTIVE = 'plan_active';
 	public const KEY_UNSCHEDULED_TASKS = 'unscheduled_tasks';
 	public const KEY_PLANNING_DAYS = 'planning_days';
+	public const KEY_MIN_PART_MINUTES = 'min_part_minutes';
 	public const KEY_RESTARTED_TASKS = 'restarted_tasks';
 	public const KEY_SPENT_TODAY = 'spent_today';
 	public const KEY_REWRITTEN_TASKS = 'rewritten_tasks';
 	public const KEY_REPLAN_HOLD = 'replan_hold_until';
+	/** Allowed minimum lengths of a split task's parts. */
+	public const MIN_PART_CHOICES = [15, 30, 45, 60];
 	/** Recovery time between tasks and buffer around events: 0–120 minutes in 15-minute steps. */
 	public const GAP_CHOICES = [0, 15, 30, 45, 60, 75, 90, 105, 120];
 	/** How often expired blocks are reviewed (0 = off: tag for review and stop scheduling). */
@@ -235,6 +238,12 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, json_encode($map));
 	}
 
+	/** Shortest part when a task is split (15, 30, 45 or 60 minutes). */
+	public function getMinPartMinutes(string $userId): int {
+		$value = (int)$this->config->getUserValue($userId, Application::APP_ID, self::KEY_MIN_PART_MINUTES, (string)Defaults::MIN_PART_MINUTES);
+		return in_array($value, self::MIN_PART_CHOICES, true) ? $value : Defaults::MIN_PART_MINUTES;
+	}
+
 	/** How many days ahead CalPlan plans (the scheduling horizon). */
 	public function getPlanningDays(string $userId): int {
 		return $this->boundedUserInt($userId, self::KEY_PLANNING_DAYS, Defaults::LOOKAHEAD_DAYS, Defaults::MIN_PLANNING_DAYS, Defaults::MAX_PLANNING_DAYS);
@@ -266,7 +275,7 @@ class ConfigService {
 		return in_array($value, self::PACE_PRESETS, true) ? $value : 'compact';
 	}
 
-	/** @return array{dailyCapMinutes:int,dailyTaskCount:int,defaultDurationMinutes:int,taskGapMinutes:int,eventBufferMinutes:int,pacePreset:string,autoRescheduleMinutes:int,planningDays:int} */
+	/** @return array{dailyCapMinutes:int,dailyTaskCount:int,defaultDurationMinutes:int,taskGapMinutes:int,eventBufferMinutes:int,pacePreset:string,autoRescheduleMinutes:int,planningDays:int,minPartMinutes:int} */
 	public function getSchedulingPolicy(string $userId): array {
 		return [
 			'dailyCapMinutes' => $this->getDailyCapMinutes($userId),
@@ -277,10 +286,14 @@ class ConfigService {
 			'pacePreset' => $this->getPacePreset($userId),
 			'autoRescheduleMinutes' => $this->getAutoRescheduleMinutes($userId),
 			'planningDays' => $this->getPlanningDays($userId),
+			'minPartMinutes' => $this->getMinPartMinutes($userId),
 		];
 	}
 
-	public function setSchedulingPolicy(string $userId, int $dailyCap, int $defaultDuration, int $taskGap, int $eventBuffer, string $preset, int $autoRescheduleMinutes = 15, int $dailyTaskCount = 0, int $planningDays = Defaults::LOOKAHEAD_DAYS): void {
+	public function setSchedulingPolicy(string $userId, int $dailyCap, int $defaultDuration, int $taskGap, int $eventBuffer, string $preset, int $autoRescheduleMinutes = 15, int $dailyTaskCount = 0, int $planningDays = Defaults::LOOKAHEAD_DAYS, int $minPartMinutes = Defaults::MIN_PART_MINUTES): void {
+		if (!in_array($minPartMinutes, self::MIN_PART_CHOICES, true)) {
+			throw new \InvalidArgumentException('Minimum part must be 15, 30, 45, or 60 minutes');
+		}
 		if ($planningDays < Defaults::MIN_PLANNING_DAYS || $planningDays > Defaults::MAX_PLANNING_DAYS) {
 			throw new \InvalidArgumentException('Planning window must be between ' . Defaults::MIN_PLANNING_DAYS . ' and ' . Defaults::MAX_PLANNING_DAYS . ' days');
 		}
@@ -313,6 +326,7 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PACE_PRESET, $preset);
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_AUTO_RESCHEDULE_MINUTES, (string)$autoRescheduleMinutes);
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PLANNING_DAYS, (string)$planningDays);
+		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_MIN_PART_MINUTES, (string)$minPartMinutes);
 	}
 
 	/** @return array<int,array<string,mixed>> newest first */
@@ -377,16 +391,16 @@ class ConfigService {
 
 	/**
 	 * Remember the time spent today by removed or moved blocks, each once
-	 * (by its task and start).
+	 * (by its block key and start).
 	 *
-	 * @param list<array{task: string, start: int, day: string, minutes: int}> $blocks
+	 * @param list<array{task: string, key: string, start: int, day: string, minutes: int}> $blocks
 	 */
 	public function addSpentToday(string $userId, string $today, array $blocks): void {
 		$known = $this->spentBlocks($userId, $today);
 		$changed = false;
 		foreach ($blocks as $block) {
 			if ($block['day'] === $today && $block['minutes'] > 0) {
-				$known[$block['task'] . '@' . $block['start']] = ['task' => $block['task'], 'minutes' => $block['minutes']];
+				$known[$block['key'] . '@' . $block['start']] = ['task' => $block['task'], 'minutes' => $block['minutes']];
 				$changed = true;
 			}
 		}
@@ -395,7 +409,7 @@ class ConfigService {
 		}
 	}
 
-	/** @return array<string, mixed> today's spent blocks by "<task uid>@<start>" (older days are dropped) */
+	/** @return array<string, mixed> today's spent blocks by "<block key>@<start>" (older days are dropped) */
 	private function spentBlocks(string $userId, string $today): array {
 		$decoded = json_decode($this->config->getUserValue($userId, Application::APP_ID, self::KEY_SPENT_TODAY, '{}'), true);
 		return is_array($decoded) && ($decoded['day'] ?? null) === $today && is_array($decoded['blocks'] ?? null) ? $decoded['blocks'] : [];

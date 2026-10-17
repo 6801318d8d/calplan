@@ -136,10 +136,10 @@ class SchedulerService {
 	 * @param Slot[] $extra per-task DTSTART windows
 	 * @param array{count: bool, limit: bool} $why
 	 */
-	private function earliestFit(PlanState $st, array $extra, Task $task, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
+	private function earliestFit(PlanState $st, array $extra, Task $task, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why, bool $withPool = true): ?Slot {
 		$best = null;
 		// The pool is ordered by start, so its first fit is its earliest one.
-		foreach ($st->slots as $slot) {
+		foreach ($withPool ? $st->slots : [] as $slot) {
 			$best = $this->tryFit($st, $slot, $task, $task->estimatedMinutes, $respectDue, $notBefore, $why);
 			if ($best !== null) {
 				break;
@@ -164,7 +164,7 @@ class SchedulerService {
 	 * opens the window from now), never on an unchecked day, past the planning
 	 * window, or on another day than the DTSTART's.
 	 *
-	 * @return Slot[] windows at least as long as the task
+	 * @return Slot[] windows at least as long as the task, or as one part of it when it may be split
 	 */
 	private function dtstartSlots(PlanState $st, Task $task): array {
 		// An all-day start only means "from that day": no window outside working hours.
@@ -189,10 +189,11 @@ class SchedulerService {
 		if ($from >= $dayEnd || $from->format('Y-m-d') !== $day->format('Y-m-d')) {
 			return [];
 		}
+		$needed = $task->canSplit ? min($task->estimatedMinutes, $st->minPartMinutes) : $task->estimatedMinutes;
 		$out = [];
 		foreach (FreeSlotsService::subtractBusy(new Slot($from, $dayEnd), array_merge($st->busy, $st->placed)) as $s) {
 			$snapped = new Slot(FreeSlotsService::snapUp($s->start), FreeSlotsService::snapDown($s->end));
-			if ($snapped->start < $snapped->end && $snapped->durationMinutes() >= $task->estimatedMinutes) {
+			if ($snapped->start < $snapped->end && $snapped->durationMinutes() >= $needed) {
 				$out[] = $snapped;
 			}
 		}
@@ -209,14 +210,116 @@ class SchedulerService {
 	 * @param Slot[] $extra
 	 * @param array{count: bool, limit: bool} $why
 	 */
-	private function place(PlanState $st, Task $task, array $extra, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
+	private function place(PlanState $st, Task $task, array $extra, ?\DateTimeImmutable $notBefore, array &$why, bool $withPool = true): ?Slot {
 		$due = $task->schedulingDue();
-		$block = $this->earliestFit($st, $extra, $task, $due !== null && $due > $st->now, $notBefore, $why);
+		$block = $this->earliestFit($st, $extra, $task, $due !== null && $due > $st->now, $notBefore, $why, $withPool);
 		if ($block !== null) {
 			$st->charge($st->day($block->start), $task->estimatedMinutes, self::groupIds($task));
 			$st->occupy($block);
 		}
 		return $block;
+	}
+
+	/**
+	 * Fill the earliest free time with a task that (or whose ancestor) allows
+	 * splitting: one whole block when it fits where it can first start, else
+	 * parts, so the day's caps and limits are used up before the next day. Parts
+	 * are at least the minimum part (a task shorter than that stays whole), on
+	 * the 15-minute grid, and never leave a shorter remainder; each part respects
+	 * DTSTART, DUE, the daily caps and the task's limit groups exactly like a
+	 * whole block, and counts as one block. Parts may also use the task's
+	 * DTSTART windows (*extra*). As in place(), a reachable DUE is never
+	 * overrun, while an overdue or undated task may roll past it. All or
+	 * nothing: the state only changes when every minute found a place.
+	 *
+	 * @param Slot[] $extra
+	 * @param array{count: bool, limit: bool} $why
+	 * @return Slot[]|null the blocks in time order (one for a whole block), or null
+	 */
+	private function placeInParts(PlanState $st, Task $task, ?\DateTimeImmutable $notBefore, array $extra, array &$why): ?array {
+		if (!$task->canSplit) {
+			return null;
+		}
+		$due = $task->schedulingDue();
+		$respectDue = $due !== null && $due > $st->now;
+		$trial = clone $st;
+		$pool = $extra === [] ? $trial->slots : self::byStart(array_merge($trial->slots, $extra));
+		$parts = [];
+		$remaining = $task->estimatedMinutes;
+		while ($remaining > 0) {
+			// Parts follow each other: each starts after the previous one.
+			$part = $this->nextPart($trial, $pool, $task, $remaining, $respectDue, $parts !== [] ? end($parts)->end : $notBefore, $why);
+			if ($part === null) {
+				return null;
+			}
+			$minutes = PlanState::minutesBetween($part->start, $part->end);
+			$parts[] = $part;
+			$trial->charge($trial->day($part->start), $minutes, self::groupIds($task));
+			$trial->occupy($part);
+			$pool = PlanState::without($pool, $part, $trial->taskGapMinutes);
+			$remaining -= $minutes;
+		}
+		$st->adopt($trial);
+		return $parts;
+	}
+
+	/**
+	 * The earliest part of *task* that fits in *pool*, or null. A part takes as
+	 * much of its slot as the day's caps and the task's limit groups allow, up
+	 * to what remains of the task.
+	 *
+	 * @param Slot[] $pool
+	 * @param array{count: bool, limit: bool} $why
+	 */
+	private function nextPart(PlanState $st, array $pool, Task $task, int $remaining, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
+		$min = $st->minPartMinutes;
+		$grid = Defaults::SLOT_GRANULARITY_MINUTES;
+		$due = $task->schedulingDue();
+		$smallest = min($min, $remaining);
+		foreach ($pool as $slot) {
+			if ($notBefore !== null && $slot->end <= $notBefore) {
+				continue;
+			}
+			$start = $this->earliestStart($st, $slot, $task, $notBefore);
+			$end = $respectDue && $due !== null && $due < $slot->end ? $due : $slot->end;
+			$room = PlanState::minutesBetween($start, $end);
+			if ($room < $smallest) {
+				continue; // no time here, before the deadline
+			}
+			$day = $st->day($start);
+			if ($st->dailyTaskCount > 0 && ($st->dailyBlocks[$day] ?? 0) >= $st->dailyTaskCount) {
+				$why['count'] = true;
+				continue;
+			}
+			$room = min($room, $st->dailyCap - ($st->dailyMinutes[$day] ?? 0));
+			$timeRoom = $room;
+			foreach ($task->limitGroups as $group) {
+				if ($group['blocks'] > 0 && ($st->groupBlocks[$group['id']][$day] ?? 0) >= $group['blocks']) {
+					$why['limit'] = true;
+					continue 2;
+				}
+				if ($group['minutes'] > 0) {
+					$room = min($room, $group['minutes'] - ($st->groupMinutes[$group['id']][$day] ?? 0));
+				}
+			}
+			if ($room >= $remaining) {
+				$minutes = $remaining; // the rest fits whole, whatever its length
+			} else {
+				$minutes = intdiv(max(0, $room), $grid) * $grid;
+				if ($remaining - $minutes < $min) {
+					// Never leave a remainder shorter than a part; stay on the grid.
+					$minutes = intdiv($remaining - $min, $grid) * $grid;
+				}
+			}
+			// A part, or the whole of a task shorter than a part.
+			if ($minutes >= $min || ($minutes > 0 && $minutes === $remaining)) {
+				return new Slot($start, PlanState::plusMinutes($start, $minutes));
+			}
+			if ($timeRoom >= $smallest && $room < $smallest) {
+				$why['limit'] = true; // only the task's daily limit stood in the way
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -289,24 +392,31 @@ class SchedulerService {
 		return array_map(fn (array $group) => $group['id'], $task->limitGroups);
 	}
 
+	/** @param Slot[] $slots @return Slot[] ordered by start */
+	private static function byStart(array $slots): array {
+		usort($slots, fn (Slot $a, Slot $b) => $a->start <=> $b->start);
+		return $slots;
+	}
+
 	/**
 	 * Compute detailed placement outcomes, including a stable reason when a task
 	 * cannot be placed. The compatibility schedule() method below unwraps slots.
 	 *
-	 * *pinned* holds, by task id, a block that has already started: it stays
-	 * as it is (a task in progress is not moved away while it is being worked
-	 * on, and the expired-block review can see it end), holds its time and
-	 * counts against its day's limits. *spent* is block time already used
-	 * today by blocks that no longer exist or are being removed (completed
-	 * tasks, moved blocks): it counts against today's limits too.
+	 * *pinned* holds, by task id, blocks that have already started: they stay
+	 * as they are (a task in progress is not moved away while it is being
+	 * worked on, and the expired-block review can see it end), hold their time
+	 * and count against their day's limits. For a task that may be split,
+	 * only what they do not cover is placed, after them. *spent* is block time
+	 * already used today by blocks that no longer exist or are being removed
+	 * (completed tasks, moved blocks): it counts against today's limits too.
 	 *
 	 * @param Task[]      $tasks
 	 * @param BusyBlock[] $busy
-	 * @param array<string, Slot> $pinned
+	 * @param array<string, Slot[]> $pinned
 	 * @param list<array{day: string, minutes: int, groups: string[]}> $spent
 	 * @return array<string, PlacementResult>
 	 */
-	public function scheduleDetailed(array $tasks, WorkingHours $working, array $busy, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $dailyTaskCount = 0, array $pinned = [], array $spent = []): array {
+	public function scheduleDetailed(array $tasks, WorkingHours $working, array $busy, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $dailyTaskCount = 0, int $minPartMinutes = Defaults::MIN_PART_MINUTES, array $pinned = [], array $spent = []): array {
 		$tz = $now->getTimezone();
 		// The same instants in the user's timezone: days are always the user's.
 		$tasks = array_map(fn (Task $t) => $t->withTimesIn($tz), $tasks);
@@ -314,18 +424,19 @@ class SchedulerService {
 
 		$minEst = Defaults::DEFAULT_ESTIMATE_MINUTES;
 		foreach ($candidates as $t) {
-			$minEst = min($minEst, $t->estimatedMinutes);
+			// A splittable task can use gaps as short as one part.
+			$minEst = min($minEst, $t->estimatedMinutes, $t->canSplit ? $minPartMinutes : PHP_INT_MAX);
 		}
-		$st = new PlanState($now, $working, $busy, $horizonDays, $dailyCap, $dailyTaskCount, $taskGapMinutes,
+		$st = new PlanState($now, $working, $busy, $horizonDays, $dailyCap, $dailyTaskCount, $taskGapMinutes, $minPartMinutes,
 			FreeSlotsService::freeSlots($working, $busy, $now, $horizonDays, $minEst));
 		foreach ($spent as $entry) {
 			$st->charge($entry['day'], $entry['minutes'], $entry['groups']);
 		}
 		$pins = [];
 		foreach ($candidates as $task) {
-			if (isset($pinned[$task->id])) {
-				$block = new Slot($pinned[$task->id]->start->setTimezone($tz), $pinned[$task->id]->end->setTimezone($tz));
-				$pins[$task->id] = $block;
+			foreach (self::byStart($pinned[$task->id] ?? []) as $block) {
+				$block = new Slot($block->start->setTimezone($tz), $block->end->setTimezone($tz));
+				$pins[$task->id][] = $block;
 				$st->charge($st->day($block->start), PlanState::minutesBetween($block->start, $block->end), self::groupIds($task));
 				$st->occupy($block);
 			}
@@ -345,17 +456,62 @@ class SchedulerService {
 					$notBefore = $sequenceEnd[$ancestor];
 				}
 			}
-			$block = $pins[$task->id] ?? $this->place($st, $task, $this->dtstartSlots($st, $task), $notBefore, $why);
-			if ($block !== null) {
+			$blocks = $this->placeTask($st, $task, $pins[$task->id] ?? [], $notBefore, $why, $complete);
+			if ($blocks !== []) {
+				$lastEnd = end($blocks)->end;
 				foreach ($task->ancestors as $ancestor) {
-					if (!isset($sequenceEnd[$ancestor]) || $block->end > $sequenceEnd[$ancestor]) {
-						$sequenceEnd[$ancestor] = $block->end;
+					if (!isset($sequenceEnd[$ancestor]) || $lastEnd > $sequenceEnd[$ancestor]) {
+						$sequenceEnd[$ancestor] = $lastEnd;
 					}
 				}
 			}
-			$outcomes[$task->id] = new PlacementResult($block, $block === null ? $this->unscheduledReason($task, $st, $why) : null);
+			$reason = $complete ? null : $this->unscheduledReason($task, $st, $why);
+			$outcomes[$task->id] = new PlacementResult($blocks[0] ?? null, $reason, count($blocks) > 1 ? $blocks : []);
 		}
 		return $outcomes;
+	}
+
+	/**
+	 * The blocks of *task*: its started blocks (*pins*), kept as they are, and
+	 * new ones. *complete* tells whether they cover the task: a task that may
+	 * be split gets its remainder placed after its started parts, and keeps
+	 * those even when the remainder finds no room.
+	 *
+	 * @param Slot[] $pins
+	 * @param array{count: bool, limit: bool} $why
+	 * @return Slot[] in time order
+	 */
+	private function placeTask(PlanState $st, Task $task, array $pins, ?\DateTimeImmutable $notBefore, array &$why, ?bool &$complete): array {
+		$complete = true;
+		if ($pins !== []) {
+			$covered = 0;
+			foreach ($pins as $pin) {
+				$covered += PlanState::minutesBetween($pin->start, $pin->end);
+			}
+			$remaining = $task->estimatedMinutes - $covered;
+			if (!$task->canSplit || $remaining <= 0) {
+				return $pins;
+			}
+			$rest = $task->withEstimatedMinutes($remaining);
+			$after = end($pins)->end;
+			$more = $this->placeInParts($st, $rest, $notBefore !== null && $notBefore > $after ? $notBefore : $after, $this->dtstartSlots($st, $rest), $why);
+			$complete = $more !== null;
+			return array_merge($pins, $more ?? []);
+		}
+		$extra = $this->dtstartSlots($st, $task);
+		if ($task->canSplit) {
+			// A splittable task fills the earliest free time, split where it does
+			// not fit whole - a whole block in a window its DTSTART opens (1.5.5)
+			// comes first, as for every other task; otherwise the window's time
+			// is filled too.
+			$block = $extra !== [] ? $this->place($st, $task, $extra, $notBefore, $why, false) : null;
+			$blocks = $block !== null ? [$block] : ($this->placeInParts($st, $task, $notBefore, $extra, $why) ?? []);
+		} else {
+			$block = $this->place($st, $task, $extra, $notBefore, $why);
+			$blocks = $block !== null ? [$block] : [];
+		}
+		$complete = $blocks !== [];
+		return $blocks;
 	}
 
 	/** @return array<string, Slot|null> */
@@ -392,11 +548,14 @@ class SchedulerService {
 		if ($maxWindow === 0) {
 			return 'no_working_hours';
 		}
-		if ($task->estimatedMinutes > $st->dailyCap) {
-			return 'duration_exceeds_daily_cap';
-		}
-		if ($task->estimatedMinutes > $maxWindow && $task->start === null) {
-			return 'duration_exceeds_openings';
+		// Splitting gets around both lengths, so they cannot be the cause then.
+		if (!$task->canSplit) {
+			if ($task->estimatedMinutes > $st->dailyCap) {
+				return 'duration_exceeds_daily_cap';
+			}
+			if ($task->estimatedMinutes > $maxWindow && $task->start === null) {
+				return 'duration_exceeds_openings';
+			}
 		}
 		$due = $task->schedulingDue();
 		if ($due !== null && $due > $st->now) {

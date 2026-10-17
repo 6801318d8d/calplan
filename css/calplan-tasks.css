@@ -503,7 +503,21 @@
 	padding-inline-start: 4px;
 }
 
-/* 6. Not scheduled: an icon in the task list and a notice row in the sidebar. */
+/* 6. Split if needed: a switch row like Auto-schedule; a note when a parent's flag applies. */
+.calplan-split-row .calplan-split-inherited {
+	display: none;
+	margin-inline-end: 10px;
+	color: var(--color-text-maxcontrast);
+	font-size: 0.9em;
+	white-space: nowrap;
+}
+
+.calplan-split-row.is-inherited .calplan-split-inherited {
+	display: inline;
+}
+
+
+/* 7. Not scheduled: an icon in the task list and a notice row in the sidebar. */
 .calplan-unscheduled-icon {
 	display: inline-flex;
 	align-items: center;

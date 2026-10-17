@@ -14,6 +14,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	data-pace-preset="<?php p($_['pacePreset']); ?>"
 	data-auto-reschedule="<?php p($_['autoRescheduleMinutes']); ?>"
 	data-planning-days="<?php p($_['planningDays']); ?>"
+	data-min-part="<?php p($_['minPartMinutes']); ?>"
 	data-history-enabled="<?php p($_['enabled'] ? '1' : '0'); ?>"
 	data-history-retention="<?php p($_['retentionDays']); ?>">
 	<h2>CalPlan</h2>
@@ -67,6 +68,15 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 		<label for="calplan-planning-days"><?php p($l->t('Planning window')); ?></label>
 		<div><input id="calplan-planning-days" type="number" required min="<?php p($_['planningDaysMin']); ?>" max="<?php p($_['planningDaysMax']); ?>" step="1"> <?php p($l->t('days ahead')); ?></div>
 		<p class="settings-hint"><?php p($l->t('CalPlan places blocks only within this many days from today; tasks beyond it are planned as the days pass. A longer window plans further ahead, but each change re-plans more of your calendar.')); ?></p>
+	</div>
+	<div class="calplan-setting-row">
+		<label for="calplan-min-part"><?php p($l->t('Minimum part when splitting')); ?></label>
+		<select id="calplan-min-part">
+			<?php foreach ($_['minPartChoices'] as $minutes): ?>
+				<option value="<?php p($minutes); ?>"><?php p($minutesLabel($minutes)); ?></option>
+			<?php endforeach; ?>
+		</select>
+		<p class="settings-hint"><?php p($l->t('For tasks with “Split if needed”: CalPlan fills the earliest free time and splits a task where it does not fit whole, in parts at least this long. Shorter parts fill each day up to its limits; longer ones keep tasks less fragmented.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-daily-cap"><?php p($l->t('Maximum task time per day')); ?></label>

@@ -69,6 +69,7 @@ class Personal implements ISettings {
 			],
 			// The choices and bounds the server accepts, so the form offers exactly those.
 			[
+				'minPartChoices' => ConfigService::MIN_PART_CHOICES,
 				'gapChoices' => ConfigService::GAP_CHOICES,
 				'planningDaysMin' => Defaults::MIN_PLANNING_DAYS,
 				'planningDaysMax' => Defaults::MAX_PLANNING_DAYS,

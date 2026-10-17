@@ -158,6 +158,21 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame('2026-08-19 09:00:00', $placed['PARENT']->start->format('Y-m-d H:i:s'));
 	}
 
+	public function testSplittableTaskKeepsItsDtstartWindowOutsideWorkingHours(): void {
+		$now = $this->utc('2026-08-19 12:00:00');
+		$task = new Task(id: 'EVENING', title: 'Evening', start: $this->utc('2026-08-19 18:00:00'), estimatedMinutes: 60, autoSchedule: true, canSplit: true);
+		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 18:00-19:00'], $this->blocksOf($outcomes, 'EVENING'));
+	}
+
+	public function testShortenedPartStaysOnTheFifteenMinuteGrid(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		// Day 1 offers 90 minutes: a 90-minute part would leave 10; 70 would be off-grid.
+		$busy = [new BusyBlock($this->utc('2026-08-19 10:30:00'), $this->utc('2026-08-19 17:00:00'))];
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 100)], $this->allWeek(), $busy, $now);
+		$this->assertSame(['08-19 09:00-10:00', '08-20 09:00-09:40'], $this->blocksOf($outcomes, 'S'));
+	}
+
 	public function testTasksWithTheSameEveningStartDoNotOverlap(): void {
 		$now = $this->utc('2026-08-19 12:00:00');
 		$a = new Task(id: 'A', title: 'A', start: $this->utc('2026-08-19 18:00:00'), estimatedMinutes: 60, autoSchedule: true);
@@ -181,7 +196,7 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$rome = new \DateTimeZone('Europe/Rome');
 		$now = new \DateTimeImmutable('2026-08-19 08:00:00', $rome);
 		// DTSTART;VALUE=DATE:20260820 as parsed in the user's timezone: Rome's midnight.
-		$task = new Task(id: 'DAY', title: 'Day', start: new \DateTimeImmutable('2026-08-20 00:00:00', $rome), estimatedMinutes: 60, autoSchedule: true, startAllDay: true);
+		$task = new Task(id: 'DAY', title: 'Day', start: new \DateTimeImmutable('2026-08-20 00:00:00', $rome), estimatedMinutes: 60, autoSchedule: true, canSplit: true, startAllDay: true);
 		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
 		$this->assertSame('2026-08-20 09:00', $outcomes['DAY']->slot->start->setTimezone($rome)->format('Y-m-d H:i'));
 	}
@@ -247,10 +262,97 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame('task_daily_limit_reached', $outcomes['BIG']->reason);
 	}
 
-	/** @return string[] "MM-DD HH:MM-HH:MM" of the block of *task*, or none */
+	/** @return string[] "HH:MM-HH:MM" per part (or the whole block) of *task* */
 	private function blocksOf(array $outcomes, string $id): array {
-		$slot = $outcomes[$id]->slot;
-		return $slot !== null ? [$slot->start->format('m-d H:i') . '-' . $slot->end->format('H:i')] : [];
+		return array_map(fn ($s) => $s->start->format('m-d H:i') . '-' . $s->end->format('H:i'), $outcomes[$id]->blocks());
+	}
+
+	private function splittable(string $id, int $minutes, bool $canSplit = true): Task {
+		return new Task(id: $id, title: $id, estimatedMinutes: $minutes, autoSchedule: true, canSplit: $canSplit);
+	}
+
+	public function testSplittableTaskLongerThanTheDailyCapIsSplitOverDays(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 360)], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-14:00', '08-20 09:00-10:00'], $this->blocksOf($outcomes, 'S'));
+		$this->assertCount(2, $outcomes['S']->parts);
+	}
+
+	public function testUnsplittableTaskLongerThanTheDailyCapStaysUnscheduled(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 360, false)], $this->allWeek(), [], $now);
+		$this->assertSame([], $outcomes['S']->blocks());
+		$this->assertSame('duration_exceeds_daily_cap', $outcomes['S']->reason);
+	}
+
+	public function testSplitUsesTheGapsAroundBusyTime(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$busy = [new BusyBlock($this->utc('2026-08-19 10:00:00'), $this->utc('2026-08-19 16:00:00'))];
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 90)], $this->allWeek(), $busy, $now, 1);
+		$this->assertSame(['08-19 09:00-10:00', '08-19 16:00-16:30'], $this->blocksOf($outcomes, 'S'));
+	}
+
+	public function testSplitNeverLeavesARemainderShorterThanAPart(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$busy = [new BusyBlock($this->utc('2026-08-19 10:00:00'), $this->utc('2026-08-19 16:00:00'))];
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 75)], $this->allWeek(), $busy, $now, 1);
+		// 60 + 15 would leave a 15-minute part: 45 + 30 instead.
+		$this->assertSame(['08-19 09:00-09:45', '08-19 16:00-16:30'], $this->blocksOf($outcomes, 'S'));
+	}
+
+	public function testSplittableTaskFillsTheEarliestFreeTimeInsteadOfWaiting(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$busy = [new BusyBlock($this->utc('2026-08-19 10:00:00'), $this->utc('2026-08-19 16:00:00'))];
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 90)], $this->allWeek(), $busy, $now);
+		// Tomorrow has a 90-minute opening, but today's gaps come first.
+		$this->assertSame(['08-19 09:00-10:00', '08-19 16:00-16:30'], $this->blocksOf($outcomes, 'S'));
+	}
+
+	public function testSplittableTaskIsWholeWhenItFitsWhereItCanFirstStart(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 90)], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-10:30'], $this->blocksOf($outcomes, 'S'));
+		$this->assertSame([], $outcomes['S']->parts);
+	}
+
+	public function testDaysAreFilledUpToTheParentsLimitWithShortParts(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$limit = [['id' => 'C', 'minutes' => 120, 'blocks' => 0]];
+		$lesson = fn (string $id, int $minutes, int $pos) => new Task(id: $id, title: $id, estimatedMinutes: $minutes, autoSchedule: true,
+			canSplit: true, ancestors: ['C'], limitGroups: $limit, sequence: [$pos]);
+		$tasks = [$lesson('JAVA', 60, 0), $lesson('ITER', 45, 1), $lesson('BIGO', 60, 2)];
+		$outcomes = $this->scheduler->scheduleDetailed($tasks, $this->allWeek(), [], $now, minPartMinutes: 15);
+		// Day 1: 60 + 45 + 15 = the full 2 hours; the rest of Big-O on day 2.
+		$this->assertSame(['08-19 09:00-10:00'], $this->blocksOf($outcomes, 'JAVA'));
+		$this->assertSame(['08-19 10:00-10:45'], $this->blocksOf($outcomes, 'ITER'));
+		$this->assertSame(['08-19 10:45-11:00', '08-20 09:00-09:45'], $this->blocksOf($outcomes, 'BIGO'));
+	}
+
+	public function testThirtyMinutePartsLeaveAShorterRestOfTheDayEmpty(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$limit = [['id' => 'C', 'minutes' => 120, 'blocks' => 0]];
+		$lesson = fn (string $id, int $minutes, int $pos) => new Task(id: $id, title: $id, estimatedMinutes: $minutes, autoSchedule: true,
+			canSplit: true, ancestors: ['C'], limitGroups: $limit, sequence: [$pos]);
+		$outcomes = $this->scheduler->scheduleDetailed([$lesson('JAVA', 60, 0), $lesson('ITER', 45, 1), $lesson('BIGO', 60, 2)], $this->allWeek(), [], $now);
+		$this->assertSame(['08-20 09:00-10:00'], $this->blocksOf($outcomes, 'BIGO'));
+	}
+
+	public function testSplitPartsRespectTheTaskDailyLimit(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$task = new Task(id: 'S', title: 'S', estimatedMinutes: 150, autoSchedule: true, canSplit: true,
+			limitGroups: [['id' => 'COURSE', 'minutes' => 60, 'blocks' => 0]]);
+		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-10:00', '08-20 09:00-10:00', '08-21 09:00-09:30'], $this->blocksOf($outcomes, 'S'));
+	}
+
+	public function testTaskShorterThanTwoPartsIsNeverSplit(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$busy = [
+			new BusyBlock($this->utc('2026-08-19 09:30:00'), $this->utc('2026-08-19 10:00:00')),
+			new BusyBlock($this->utc('2026-08-19 10:30:00'), $this->utc('2026-08-19 17:00:00')),
+		];
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 45)], $this->allWeek(), $busy, $now, 1);
+		$this->assertSame([], $outcomes['S']->blocks());
 	}
 
 	/** Day 1 has only a 30-minute opening (09:00-09:30); A comes before B (by due date alone, by sequence in a tree). */
@@ -317,8 +419,18 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$task = new Task(id: 'L', title: 'L', due: $this->utc('2026-08-30 12:00:00'), estimatedMinutes: 120, autoSchedule: true,
 			ancestors: ['C'], rootDue: $this->utc('2026-08-19 10:00:00'), sequence: [0]);
 		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
-		$this->assertNull($outcomes['L']->slot);
+		$this->assertSame([], $outcomes['L']->blocks());
 		$this->assertSame('no_fit_before_due', $outcomes['L']->reason);
+	}
+
+	public function testPartsOfASplitSubtaskComeAfterItsEarlierSibling(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$limit = [['id' => 'COURSE', 'minutes' => 120, 'blocks' => 0]];
+		$lesson = new Task(id: 'LESSON', title: 'Lesson', estimatedMinutes: 90, autoSchedule: true, ancestors: ['COURSE'], limitGroups: $limit, sequence: [0]);
+		$assignment = new Task(id: 'ASSIGN', title: 'Assignment', estimatedMinutes: 180, autoSchedule: true, canSplit: true, ancestors: ['COURSE'], limitGroups: $limit, sequence: [1]);
+		$outcomes = $this->scheduler->scheduleDetailed([$assignment, $lesson], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-10:30'], $this->blocksOf($outcomes, 'LESSON'));
+		$this->assertSame(['08-19 10:30-11:00', '08-20 09:00-11:00', '08-21 09:00-09:30'], $this->blocksOf($outcomes, 'ASSIGN'));
 	}
 
 	public function testNoDueDateIsStillPlaced(): void {
@@ -577,6 +689,25 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame(2.0, $this->scheduler->daysUntilDue($task, new \DateTimeImmutable('2027-03-27 01:00:00', $rome)));
 	}
 
+	public function testASplittableTaskThatFitsWholeIsNotCutToTheGrid(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$outcomes = $this->scheduler->scheduleDetailed([$this->splittable('S', 100)], $this->allWeek(), [], $now, dailyCap: 100);
+		$this->assertSame(['08-19 09:00-10:40'], $this->blocksOf($outcomes, 'S'));
+	}
+
+	public function testASplittableTaskFillsItsEveningWindow(): void {
+		$now = $this->utc('2026-08-19 12:00:00');
+		$task = new Task(id: 'S', title: 'S', start: $this->utc('2026-08-19 20:00:00'), estimatedMinutes: 300, autoSchedule: true, canSplit: true);
+		$this->assertSame(['08-19 20:00-23:45', '08-20 09:00-10:15'], $this->blocksOf($this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now), 'S'));
+	}
+
+	public function testAWindowAndThePoolTogetherMeetADeadline(): void {
+		$now = $this->utc('2026-08-19 12:00:00');
+		$task = new Task(id: 'S', title: 'S', due: $this->utc('2026-08-20 10:00:00'), start: $this->utc('2026-08-19 18:00:00'), estimatedMinutes: 90, autoSchedule: true, canSplit: true);
+		$busy = [new BusyBlock($this->utc('2026-08-19 19:00:00'), $this->utc('2026-08-20 00:00:00'))];
+		$this->assertSame(['08-19 18:00-19:00', '08-20 09:00-09:30'], $this->blocksOf($this->scheduler->scheduleDetailed([$task], $this->allWeek(), $busy, $now), 'S'));
+	}
+
 	public function testADtstartOnAnUncheckedDayOpensNoWindow(): void {
 		$now = $this->utc('2026-10-16 10:00:00'); // a Friday
 		$task = new Task(id: 'SUN', title: 'Sunday', start: $this->utc('2026-10-18 10:00:00'), estimatedMinutes: 60, autoSchedule: true);
@@ -621,6 +752,12 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame(90 * 60, $slot->end->getTimestamp() - $slot->start->getTimestamp());
 	}
 
+	public function testASplittableTaskShortOfTimeBeforeItsDueSaysSo(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$task = new Task(id: 'S', title: 'S', due: $this->utc('2026-08-19 12:00:00'), estimatedMinutes: 360, autoSchedule: true, canSplit: true);
+		$this->assertSame('no_fit_before_due', $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now)['S']->reason);
+	}
+
 	public function testAnUndatedTaskComesAfterOneDueInAMonth(): void {
 		$now = $this->utc('2026-08-19 08:00:00');
 		$placed = $this->scheduler->schedule([
@@ -632,7 +769,7 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 
 	public function testStartedBlocksHoldTheirTimeAndCount(): void {
 		$now = $this->utc('2026-08-19 09:20:00');
-		$pinned = ['A' => new \OCA\AutoSchedule\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'))];
+		$pinned = ['A' => [new \OCA\AutoSchedule\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'))]];
 		$outcomes = $this->scheduler->scheduleDetailed([$this->task('A', estimatedMinutes: 60), $this->task('B', estimatedMinutes: 60)], $this->allWeek(), [], $now,
 			dailyTaskCount: 1, pinned: $pinned);
 		$this->assertSame(['08-19 09:00-10:00'], $this->blocksOf($outcomes, 'A'));

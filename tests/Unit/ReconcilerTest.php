@@ -76,6 +76,24 @@ class ReconcilerTest extends AutoScheduleTestCase {
 		$this->assertSame(['T'], $second->unchanged);
 	}
 
+	public function testSplitTaskReplacesItsWholeBlockWithNumberedParts(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$t = new \OCA\AutoSchedule\Model\Task(id: 'T', title: 'T', priority: 5, estimatedMinutes: 360, autoSchedule: true, canSplit: true);
+		$whole = new CalendarEvent('calplan-T', $this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 15:00:00'), 'T');
+		$recon = $this->reconcile([$t], $this->allWeek(), [$whole], $now);
+		$this->assertSame(['T'], $recon->toDelete);
+		$this->assertSame([[1, 2], [2, 2]], array_map(fn ($put) => [$put[2], $put[3]], $recon->toPut));
+
+		// Fed back as existing part blocks, nothing changes.
+		$existing = array_map(fn ($put) => new CalendarEvent(
+			'calplan-T~p' . $put[2], $put[1]->start, $put[1]->end, 'T', '🔒 T (' . $put[2] . '/2)',
+			"---Task---\nTitle: T\nPriority: 5", null, null, 5,
+		), $recon->toPut);
+		$second = $this->reconcile([$t], $this->allWeek(), $existing, $now);
+		$this->assertFalse($second->hasChanges());
+		$this->assertSame(['T~p1', 'T~p2'], $second->unchanged);
+	}
+
 	public function testCalendarsArePlannedTogetherByUrgency(): void {
 		$now = $this->utc('2026-08-19 08:00:00');
 		// A, listed first, holds an undated low-priority task; B an urgent one due at noon.
@@ -294,6 +312,18 @@ class ReconcilerTest extends AutoScheduleTestCase {
 		$this->assertSame(['T'], $this->reconcile([$t], $this->allWeek(), [$started], $now, extraBusyEvents: [$free])->unchanged);
 	}
 
+	public function testStartedPartsStayAndTheRestFollowsThem(): void {
+		$now = $this->utc('2026-08-19 10:10:00');
+		$t = new Task(id: 'T', title: 'T', priority: 5, estimatedMinutes: 120, autoSchedule: true, canSplit: true);
+		$part1 = new CalendarEvent('calplan-T~p1', $this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'), 'T', '🔒 T (1/2)', "---Task---\nTitle: T\nPriority: 5", null, null, 5);
+		$part2 = new CalendarEvent('calplan-T~p2', $this->utc('2026-08-20 09:00:00'), $this->utc('2026-08-20 10:00:00'), 'T', '🔒 T (2/2)', "---Task---\nTitle: T\nPriority: 5", null, null, 5);
+		$recon = $this->reconcile([$t], $this->allWeek(), [$part1, $part2], $now);
+		// Part 1 (done) stays; the remaining hour moves up to today.
+		$this->assertSame(['T~p1'], $recon->unchanged);
+		$this->assertSame('2026-08-19 10:15:00', $recon->toPut[0][1]->start->format('Y-m-d H:i:s'));
+		$this->assertSame(2, $recon->toPut[0][2]);
+	}
+
 	public function testTimeSpentTodayCountsAgainstTheDailyCap(): void {
 		$now = $this->utc('2026-08-19 10:30:00');
 		// DONE's block 09:00-10:00 leaves with its task: 60 minutes spent today.
@@ -303,7 +333,7 @@ class ReconcilerTest extends AutoScheduleTestCase {
 		$days = array_map(fn ($put) => $put[1]->start->format('Y-m-d'), $recon->toPut);
 		sort($days);
 		$this->assertSame(['2026-08-19', '2026-08-20'], $days);
-		$this->assertSame([['task' => 'DONE', 'start' => $done->start->getTimestamp(), 'day' => '2026-08-19', 'minutes' => 60]], $recon->spent);
+		$this->assertSame([['task' => 'DONE', 'key' => 'DONE', 'start' => $done->start->getTimestamp(), 'day' => '2026-08-19', 'minutes' => 60]], $recon->spent);
 		// Remembered after the block is gone, it still counts.
 		$again = $this->reconcile([$this->task('A', estimatedMinutes: 60), $this->task('B', estimatedMinutes: 60)], $this->allWeek(), [], $now, dailyCap: 120,
 			priorSpent: [['task' => 'DONE', 'day' => '2026-08-19', 'minutes' => 60]]);

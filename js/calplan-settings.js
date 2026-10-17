@@ -53,6 +53,7 @@
 		var dailyTaskCount = document.getElementById('calplan-daily-task-count')
 		var defaultDuration = document.getElementById('calplan-default-duration')
 		var planningDays = document.getElementById('calplan-planning-days')
+		var minPart = document.getElementById('calplan-min-part')
 		var taskGap = document.getElementById('calplan-task-gap')
 		var eventBuffer = document.getElementById('calplan-event-buffer')
 		var autoReschedule = document.getElementById('calplan-auto-reschedule')
@@ -86,6 +87,7 @@
 		dailyTaskCount.value = root.dataset.dailyTaskCount || '0'
 		defaultDuration.value = root.dataset.defaultDuration || '30'
 		planningDays.value = root.dataset.planningDays || '14'
+		selectValue(minPart, root.dataset.minPart || '30')
 		selectValue(taskGap, root.dataset.taskGap || '0')
 		selectValue(eventBuffer, root.dataset.eventBuffer || '0')
 		autoReschedule.value = root.dataset.autoReschedule || '15'
@@ -157,6 +159,7 @@
 					pacePreset: pace.value,
 					autoRescheduleMinutes: +autoReschedule.value,
 					planningDays: numberValue(planningDays, labelOf(planningDays)),
+					minPartMinutes: +minPart.value,
 				}
 			} catch (error) {
 				status.textContent = error.message

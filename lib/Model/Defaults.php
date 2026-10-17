@@ -55,6 +55,22 @@ class Defaults {
 	public const DAILY_MAX_BLOCKS_PROP = 'X-CALPLAN-DAILY-MAX-BLOCKS';
 
 	/**
+	 * VTODO flag (TRUE) letting CalPlan split the task and all its subtasks
+	 * into parts when it cannot be placed in one block; parts are at least the
+	 * user's minimum part (MIN_PART_MINUTES by default; a shorter task stays whole).
+	 */
+	public const SPLITTABLE_PROP = 'X-CALPLAN-SPLITTABLE';
+	public const MIN_PART_MINUTES = 30;
+
+	/**
+	 * A part's block is keyed "<task uid>~p<n>" (UID calplan-<key>, object
+	 * calplan-<key>.ics) and carries X-CALPLAN-PART:<n>/<count>; a whole
+	 * task's block keeps the plain "<task uid>" key.
+	 */
+	public const SLOT_PART_SEPARATOR = '~p';
+	public const SLOT_PART_PROP = 'X-CALPLAN-PART';
+
+	/**
 	 * Map a VTODO priority (1 highest … 9 lowest, 0 = no priority) to a
 	 * scheduling weight that falls with the priority: Nextcloud Tasks writes
 	 * high = 1, medium = 5 and low = 9. No priority (0, plan 0.9.1: an absent

@@ -246,13 +246,13 @@ class CalendarRepository {
 	}
 
 	/**
-	 * Create or update the working-slot VEVENT for *task*. An existing block
-	 * is updated at *objectUri*, where it is stored (an imported block may not
-	 * use CalPlan's file name).
+	 * Create or update the working-slot VEVENT for *task*, or for one part of
+	 * it when split. An existing block is updated at *objectUri*, where it is
+	 * stored (an imported block may not use CalPlan's file name).
 	 */
-	public function putSlot(string $calendarId, Task $task, Slot $slot, ?\DateTimeImmutable $now = null, ?string $objectUri = null): void {
-		$ics = IcalCodec::buildSlotEvent($task, $slot->start, $slot->end, $now);
-		$objectUri ??= self::slotObjectUri($task->id);
+	public function putSlot(string $calendarId, Task $task, Slot $slot, ?\DateTimeImmutable $now = null, ?int $part = null, ?int $partCount = null, ?string $objectUri = null): void {
+		$ics = IcalCodec::buildSlotEvent($task, $slot->start, $slot->end, $now, $part, $partCount);
+		$objectUri ??= self::slotObjectUri(IcalCodec::slotKey($task->id, $part));
 		if ($this->backend->getCalendarObject($calendarId, $objectUri) !== null) {
 			$this->backend->updateCalendarObject($calendarId, $objectUri, $ics);
 		} else {
@@ -272,9 +272,9 @@ class CalendarRepository {
 		$this->backend->deleteCalendarObject($calendarId, $objectUri, CalDavBackend::CALENDAR_TYPE_CALENDAR, true);
 	}
 
-	/** The object URI CalPlan gives the block of task *taskUid*. */
-	public static function slotObjectUri(string $taskUid): string {
-		return Defaults::SLOT_UID_PREFIX . $taskUid . '.ics';
+	/** The object URI CalPlan gives the block with key *slotKey* ("<task uid>" or "<task uid>~p<n>"). */
+	public static function slotObjectUri(string $slotKey): string {
+		return Defaults::SLOT_UID_PREFIX . $slotKey . '.ics';
 	}
 
 	/** @return list<array<string,mixed>> the calendar's object metadata, listed once per reconcile */

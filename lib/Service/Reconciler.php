@@ -54,7 +54,7 @@ class Reconciler {
 	 * @param list<array{task: string, day: string, minutes: int}> $priorSpent
 	 * @return array<string, Reconciliation> keyed like $plans
 	 */
-	public function reconcileCalendars(array $plans, WorkingHours $working, array $allEvents, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $eventBufferMinutes = 0, int $dailyTaskCount = 0, array $released = [], array $groupsByTask = [], array $priorSpent = []): array {
+	public function reconcileCalendars(array $plans, WorkingHours $working, array $allEvents, \DateTimeImmutable $now, int $horizonDays = Defaults::LOOKAHEAD_DAYS, int $dailyCap = Defaults::DEFAULT_DAILY_CAP_MINUTES, int $taskGapMinutes = 0, int $eventBufferMinutes = 0, int $dailyTaskCount = 0, int $minPartMinutes = Defaults::MIN_PART_MINUTES, array $released = [], array $groupsByTask = [], array $priorSpent = []): array {
 		$today = $now->format('Y-m-d');
 		$allTasks = [];
 		$pinned = [];
@@ -66,14 +66,14 @@ class Reconciler {
 				$scheduled[$task->id] = true;
 			}
 			$spentNow[$key] = [];
-			foreach ($this->existingPlacements($plan['events']) as $taskUid => $event) {
-				$taskUid = (string)$taskUid;
+			foreach ($this->existingPlacements($plan['events']) as $blockKey => $event) {
 				if ($event->start > $now) {
 					continue;
 				}
+				$taskUid = (string)$event->autoScheduleTaskUid;
 				$takenAt = self::takenAt($event, $allEvents);
 				if ($takenAt === null && isset($scheduled[$taskUid]) && !isset($released[$taskUid])) {
-					$pinned[$taskUid] = new Slot($event->start, $event->end);
+					$pinned[$taskUid][] = new Slot($event->start, $event->end);
 				} elseif ($event->start->setTimezone($now->getTimezone())->format('Y-m-d') === $today) {
 					// Leaving: what of it lies before now, and before an event
 					// that took its time, was spent today.
@@ -83,6 +83,7 @@ class Reconciler {
 					}
 					$spentNow[$key][] = [
 						'task' => $taskUid,
+						'key' => (string)$blockKey,
 						'start' => $event->start->getTimestamp(),
 						'day' => $today,
 						'minutes' => intdiv(max(0, $until->getTimestamp() - $event->start->getTimestamp()), 60),
@@ -96,7 +97,7 @@ class Reconciler {
 				$spent[] = ['day' => $today, 'minutes' => $entry['minutes'], 'groups' => $groupsByTask[$entry['task']] ?? []];
 			}
 		}
-		$outcomes = $this->scheduler->scheduleDetailed($allTasks, $working, $this->busy($allEvents, $eventBufferMinutes), $now, $horizonDays, $dailyCap, $taskGapMinutes, $dailyTaskCount, $pinned, $spent);
+		$outcomes = $this->scheduler->scheduleDetailed($allTasks, $working, $this->busy($allEvents, $eventBufferMinutes), $now, $horizonDays, $dailyCap, $taskGapMinutes, $dailyTaskCount, $minPartMinutes, $pinned, $spent);
 		$out = [];
 		foreach ($plans as $key => $plan) {
 			$out[$key] = $this->diff($plan['tasks'], $outcomes, $plan['events'], $now);
@@ -129,13 +130,15 @@ class Reconciler {
 
 	/**
 	 * @param CalendarEvent[] $events
-	 * @return array<array-key, CalendarEvent> our own placed blocks, keyed by task UID (a numeric UID is an int key)
+	 * @return array<string, CalendarEvent> our own placed blocks, keyed by block key
+	 *                                      ("<task uid>", or "<task uid>~p<n>" for a part)
 	 */
 	private function existingPlacements(array $events): array {
 		$out = [];
 		foreach ($events as $e) {
-			if ($e->autoScheduleTaskUid !== null) {
-				$out[$e->autoScheduleTaskUid] = $e;
+			$key = $e->slotKey();
+			if ($key !== null) {
+				$out[$key] = $e;
 			}
 		}
 		return $out;
@@ -173,49 +176,61 @@ class Reconciler {
 	private function diff(array $tasks, array $outcomes, array $events, \DateTimeImmutable $now): Reconciliation {
 		$existing = $this->existingPlacements($events);
 
-		// toPut entries are [task, slot]; unchanged and toDelete hold task UIDs.
+		// Desired blocks are keyed like existing ones: "<task uid>" for a whole
+		// block, "<task uid>~p<n>" for part n of a split task. toPut entries are
+		// [task, slot, part|null, partCount|null]; unchanged and toDelete hold keys.
 		$recon = new Reconciliation();
-		foreach ($existing as $uid => $event) {
+		foreach ($existing as $key => $event) {
 			if ($event->objectUri !== null) {
-				$recon->objectUris[(string)$uid] = $event->objectUri;
+				$recon->objectUris[(string)$key] = $event->objectUri;
 			}
 		}
-		$desired = [];
+		$desiredKeys = [];
 		foreach ($tasks as $task) {
 			$outcome = $outcomes[$task->id] ?? null;
 			if ($outcome === null) {
-				continue; // not eligible (e.g. a container): its block goes
+				continue; // not eligible (e.g. a container): its blocks go
 			}
-			if ($outcome->slot === null) {
-				$recon->unscheduled[$task->id] = $outcome->reason ?? 'no_capacity_within_horizon';
-				continue;
+			$blocks = $outcome->blocks();
+			if ($outcome->reason !== null) {
+				// Not (fully) placed: none of it, or a split task's remainder.
+				$recon->unscheduled[$task->id] = $outcome->reason;
 			}
-			$desired[$task->id] = true;
-			$prev = $existing[$task->id] ?? null;
-			// Re-PUT when the time changed OR the mirrored content (notes,
-			// priority, %, location, url, title, class) changed, so editing a
-			// task's content re-mirrors into its block (plan 1.5.11).
-			if ($prev === null || !$this->placementMatches($prev, $outcome->slot, $task, $now)) {
-				$recon->toPut[] = [$task, $outcome->slot];
-			} else {
-				$recon->unchanged[] = $task->id;
+			$partCount = count($blocks) > 1 ? count($blocks) : null;
+			if ($blocks !== []) {
+				$recon->blocks[$task->id] = array_values($blocks);
+			}
+			foreach (array_values($blocks) as $i => $slot) {
+				$part = $partCount !== null ? $i + 1 : null;
+				$key = IcalCodec::slotKey($task->id, $part);
+				$desiredKeys[$key] = true;
+				$prev = $existing[$key] ?? null;
+				// Re-PUT when the time changed OR the mirrored content (notes,
+				// priority, %, location, url, title, part label, class) changed, so
+				// editing a task's content re-mirrors into its blocks (plan 1.5.11).
+				if ($prev === null || !$this->placementMatches($prev, $slot, $task, $now, $part, $partCount)) {
+					$recon->toPut[] = [$task, $slot, $part, $partCount];
+				} else {
+					$recon->unchanged[] = $key;
+				}
 			}
 		}
 
-		// Blocks to remove: task no longer eligible, or eligible but unscheduled.
-		foreach ($existing as $uid => $_) {
-			if (!isset($desired[$uid])) {
-				$recon->toDelete[] = (string)$uid;
+		// Blocks to remove: task no longer eligible, unscheduled, or now split
+		// differently (a whole block replaced by parts, or fewer parts).
+		foreach ($existing as $key => $_) {
+			if (!isset($desiredKeys[(string)$key])) {
+				$recon->toDelete[] = (string)$key;
 			}
 		}
 		return $recon;
 	}
 
-	private function placementMatches(CalendarEvent $existing, Slot $desired, Task $task, \DateTimeImmutable $now): bool {
+	private function placementMatches(CalendarEvent $existing, Slot $desired, Task $task, \DateTimeImmutable $now, ?int $part, ?int $partCount): bool {
 		if ($existing->start != $desired->start || $existing->end != $desired->end) {
 			return false;
 		}
-		$expected = IcalCodec::slotContent($task, $now);
+		$expected = IcalCodec::slotContent($task, $now, $part, $partCount);
 		return $existing->summary === $expected['summary']
 			&& $existing->description === $expected['description']
 			&& $existing->location === $expected['location']

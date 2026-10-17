@@ -36,6 +36,13 @@ class CalendarEvent {
 	) {
 	}
 
+	/** The block key of an owned CalPlan block: its UID without the calplan- prefix. */
+	public function slotKey(): ?string {
+		return $this->autoScheduleTaskUid !== null && str_starts_with($this->uid, Defaults::SLOT_UID_PREFIX)
+			? substr($this->uid, strlen(Defaults::SLOT_UID_PREFIX))
+			: null;
+	}
+
 	public function toBusy(): BusyBlock {
 		return new BusyBlock($this->start, $this->end, $this->uid);
 	}

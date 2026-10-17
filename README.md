@@ -96,12 +96,20 @@ Below **Auto-schedule**, CalPlan adds:
 
 - **Duration** — the block length, saved as the task's `ESTIMATED-DURATION`
   (draft-ietf-calext-ical-tasks). Empty means your default duration.
+- **Split if needed** (`X-CALPLAN-SPLITTABLE:TRUE`) — the task fills the
+  earliest free time: one whole block when it fits where it can first start,
+  otherwise parts named “Title (1/2)”, “Title (2/2)”…, so each day is used up
+  to its limits before the next. Parts are at least the **Minimum part when
+  splitting** (Personal settings: 15, 30, 45 or 60 minutes, default 30; 15
+  fills days exactly). A task that does not fit even in parts stays
+  unscheduled. Each part counts as a block for the daily limits; the review
+  starts after the last part.
 - **Daily limit** (tasks with subtasks; `X-CALPLAN-DAILY-MAX-TIME`, a
   duration, and `X-CALPLAN-DAILY-MAX-BLOCKS`) — at most this much block time
   and/or this many blocks per day for the task and all its subtasks together.
   Blocks of the day that have already started or ended count too.
 
-A Daily limit set on a task applies to all its subtasks; nested limits
+Split and Daily limit set on a task apply to all its subtasks; nested limits
 all apply at once. Turning **Auto-schedule** on or off for a task with
 subtasks does the same for all of them. While some subtasks (at any depth) are
 still to be scheduled or awaiting review, they get the blocks and the parent

@@ -11,16 +11,18 @@ CalPlan is a native Nextcloud app. It does not patch the Tasks or Calendar apps.
 - A task is a CalDAV `VTODO`.
 - A task is selected for scheduling with the standard `CATEGORIES:calplan` value
   (matched like the Tasks UI: case-insensitive, surrounding spaces ignored).
-- A scheduled block is a derived `VEVENT` in the task's calendar.
+- A scheduled block is a derived `VEVENT` in the task's calendar; a split task
+  has one block per part.
 - The task is authoritative. The event is disposable output.
 
 Generated events:
 
 ```text
-UID:calplan-<task UID>
+UID:calplan-<block key>            (<task UID>, or <task UID>~p<n> for part n)
+X-CALPLAN-PART:<n>/<count>         (parts only)
 RELATED-TO;RELTYPE=TODO:<task UID>
 CATEGORIES:calplan-slot
-SUMMARY:🔒 [! ]<task title>
+SUMMARY:🔒 [! ]<task title>[ (n/count)]
 DTSTART:...Z                       (UTC: no VTIMEZONE needed)
 DTEND:...Z
 STATUS:CONFIRMED
@@ -36,6 +38,7 @@ A task's own settings live on its `VTODO`:
 | Property | Meaning |
 |---|---|
 | `ESTIMATED-DURATION` | Block length (draft-ietf-calext-ical-tasks), set by the sidebar Duration field |
+| `X-CALPLAN-SPLITTABLE:TRUE` | Split if needed, for the task and its subtasks |
 | `X-CALPLAN-DAILY-MAX-TIME` / `X-CALPLAN-DAILY-MAX-BLOCKS` | Daily limit for the task and its subtasks together |
 | `X-APPLE-SORT-ORDER` | Tasks' manual order, the order of a tree's subtasks |
 
@@ -163,9 +166,9 @@ the user explicitly enables Auto-schedule again. A task with a subtask still to
 schedule or awaiting review is a container and gets no block itself.
 
 `TaskLimits::resolve` attaches what each task inherits along its `RELATED-TO`
-parent chain within the calendar: limit groups, the top task's due date, start
-and priority, the tree position, and the parent path. A parent link closing a
-cycle is ignored; a completed ancestor ends the chain.
+parent chain within the calendar: limit groups, splittability, the top task's due
+date, start and priority, the tree position, and the parent path. A parent link
+closing a cycle is ignored; a completed ancestor ends the chain.
 
 ### 2. Busy subtraction
 
@@ -209,19 +212,24 @@ A timed `DTSTART` on a working day opens a task-specific window from it (or from
 now) through the end of that day when it lies outside working hours, or when the
 working time left after it is too short for the task.
 
+A task that may be split fills the earliest free time: whole where it fits at
+its first possible start, otherwise in parts of at least the minimum part, each
+day used up to its limits.
+
 If no placement fits before a future due date, the task remains unscheduled. If
 the task is already overdue or has no due date, the due check is relaxed and the
 scheduler tries the earliest remaining capacity in the horizon.
 
 ### 5. Outcome
 
-The scheduler returns the block or a stable reason: `starts_after_horizon`,
-`no_working_hours`, `duration_exceeds_daily_cap`, `duration_exceeds_openings`,
-`no_fit_before_due`, `no_capacity_within_horizon`, `daily_task_count_reached`,
+The scheduler returns the blocks or a stable reason: `starts_after_horizon`,
+`no_working_hours`, `duration_exceeds_daily_cap`, `duration_exceeds_openings`
+(not for tasks that may be split), `no_fit_before_due`,
+`no_capacity_within_horizon`, `daily_task_count_reached`,
 `task_daily_limit_reached`. ReconcileService adds `calendar_without_events` and
 `duplicate_uid`.
 
-`Reconciler` compares the desired block and mirrored content with the current
+`Reconciler` compares the desired blocks and mirrored content with the current
 events, then produces puts, deletes, unchanged objects, and unscheduled outcomes.
 
 ## Scheduling research
@@ -295,8 +303,8 @@ task URL, and `👣 First step:`.
 Per-user state is stored with Nextcloud's standard `OCP\IConfig` user values:
 
 - working hours (else the user's Nextcloud availability, else 09:00–17:00);
-- pacing, daily limits, duration fallback, task gap, event buffer and planning
-  window;
+- pacing, daily limits, duration fallback, task gap, event buffer, planning
+  window and minimum part;
 - review interval, paused and restarted task UIDs;
 - ignored calendars and event-title rules;
 - history consent and retention;
@@ -317,8 +325,8 @@ and before an export, and a deleted account's history is deleted with it.
 routes (not their public pages), for logged-in users the app is enabled for. The
 script adds:
 
-- the Tasks sidebar Auto-schedule switch and the Duration and Daily limit rows
-  (disabled for tasks Tasks cannot save);
+- the Tasks sidebar Auto-schedule switch and the Duration, Split if needed and
+  Daily limit rows (disabled for tasks Tasks cannot save);
 - task-list badges and not-scheduled warnings;
 - Reconcile and help actions in Tasks and Calendar;
 - latest-run status in the help dialog; and
@@ -338,7 +346,7 @@ Nextcloud app-management icon discovery uses `img/app.svg` and
 | `lib/Service/ReconcileService.php` | Per-user orchestration, lock, review, metrics, apply |
 | `lib/Service/CalendarRepository.php` | CalDAV reads and writes |
 | `lib/Service/TaskLimits.php` | Task trees: relationships, inheritance, containers |
-| `lib/Service/SchedulerService.php` | Ranking, constraints, placement, reasons |
+| `lib/Service/SchedulerService.php` | Ranking, constraints, placement, splitting, reasons |
 | `lib/Service/PlanState.php` | Free pool and daily usage of one scheduling pass |
 | `lib/Service/FreeSlotsService.php` | Working windows and busy subtraction |
 | `lib/Service/Reconciler.php` | Pins, desired/current diff and idempotency |

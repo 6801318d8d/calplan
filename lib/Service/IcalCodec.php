@@ -9,9 +9,10 @@ declare(strict_types=1);
  * Pure iCalendar <-> model codec using the Sabre\VObject library bundled with
  * Nextcloud. Tasks are flagged via the standard CATEGORIES value `calplan`;
  * a task's own settings use ESTIMATED-DURATION (draft-ietf-calext-ical-tasks)
- * and X-CALPLAN- properties for its daily limits. The working-slot VEVENTs we
- * create carry UID `calplan-<taskUID>`, RELATED-TO back to the VTODO and
- * CATEGORIES `calplan-slot`.
+ * and a few X-CALPLAN- properties (daily limits, "split if needed"). The
+ * working-slot VEVENTs we create carry UID `calplan-<block key>`, RELATED-TO
+ * back to the VTODO, CATEGORIES `calplan-slot` and, for a part of a split
+ * task, X-CALPLAN-PART.
  */
 
 namespace OCA\AutoSchedule\Service;
@@ -113,6 +114,7 @@ class IcalCodec {
 				categories: $categories,
 				dailyLimitMinutes: self::durationToMinutes(self::stringProp($vtodo, Defaults::DAILY_MAX_TIME_PROP)),
 				dailyLimitBlocks: ctype_digit($limitBlocksRaw) ? (int)$limitBlocksRaw : 0,
+				splittable: in_array(strtoupper(trim(self::stringProp($vtodo, Defaults::SPLITTABLE_PROP))), ['TRUE', 'YES', '1'], true),
 				sortOrder: preg_match('/^-?\d+$/', trim($sortRaw)) === 1
 					? (int)trim($sortRaw)
 					: ($created !== null ? $created->getTimestamp() - 978307200 : 0),
@@ -171,7 +173,7 @@ class IcalCodec {
 			$isOwnedSlot = str_starts_with($uid, Defaults::SLOT_UID_PREFIX)
 				&& (Task::hasCategory($categories, Defaults::SLOT_CATEGORY) || $relatedTaskUid !== null);
 			$autoTaskUid = $isOwnedSlot
-				? ($relatedTaskUid ?? substr($uid, strlen(Defaults::SLOT_UID_PREFIX)))
+				? ($relatedTaskUid ?? self::taskUidOfSlotKey(substr($uid, strlen(Defaults::SLOT_UID_PREFIX))))
 				: null;
 			// Read the mirrored content back from our own slots so the
 			// reconciler can detect content-only edits (plan 1.5.11). The
@@ -216,6 +218,16 @@ class IcalCodec {
 		return self::isDateOnly($vevent, 'DTSTART') ? $start->modify('+1 day') : $start;
 	}
 
+	/** The block key of a task's block: the task UID, or "<uid>~p<n>" for part n of a split task. */
+	public static function slotKey(string $taskUid, ?int $part = null): string {
+		return $part === null ? $taskUid : $taskUid . Defaults::SLOT_PART_SEPARATOR . $part;
+	}
+
+	/** The task UID a block key belongs to. */
+	public static function taskUidOfSlotKey(string $key): string {
+		return preg_replace('#' . preg_quote(Defaults::SLOT_PART_SEPARATOR, '#') . '\d+$#', '', $key) ?? $key;
+	}
+
 	/**
 	 * The mirrored content a working-slot VEVENT carries for $task, exactly as
 	 * the reconciler expects to find it on an existing slot. Pure and
@@ -236,7 +248,10 @@ class IcalCodec {
 	 *
 	 * @return array{summary:string,description:?string,location:?string,url:?string,priority:?int,classification:?string}
 	 */
-	public static function slotContent(Task $task, ?\DateTimeImmutable $now = null): array {
+	public static function slotContent(Task $task, ?\DateTimeImmutable $now = null, ?int $part = null, ?int $partCount = null): array {
+		// A part of a split task ends its SUMMARY with "(n/count)": short enough
+		// for Calendar's narrow blocks, and the title stays first.
+		$partLabel = $part !== null && $partCount !== null ? ' (' . $part . '/' . $partCount . ')' : '';
 		$common = [
 			'location' => self::nonEmpty(self::lineBreaks($task->location)),
 			'url' => self::nonEmpty(str_replace(',', '%2C', (string)$task->url)),
@@ -251,7 +266,7 @@ class IcalCodec {
 			if ($task->percentComplete !== null && $task->percentComplete > 0) {
 				$desc = $task->percentComplete . '% - ' . $desc;
 			}
-			return ['summary' => self::lineBreaks($task->title), 'description' => self::nonEmpty(self::lineBreaks($desc))] + $common;
+			return ['summary' => self::lineBreaks($task->title) . $partLabel, 'description' => self::nonEmpty(self::lineBreaks($desc))] + $common;
 		}
 
 		// Live slot SUMMARY: <lock> [! if overdue] title. The relation marker,
@@ -262,7 +277,8 @@ class IcalCodec {
 		// cue for an overdue task stays in the SUMMARY.
 		$summary = '🔒 '
 			. (self::isUrgent($task, $now) ? '! ' : '')
-			. self::lineBreaks($task->title);
+			. self::lineBreaks($task->title)
+			. $partLabel;
 		$description = self::structuredDescription($task, $now);
 		return ['summary' => $summary, 'description' => $description !== null ? self::lineBreaks($description) : null] + $common;
 	}
@@ -454,16 +470,20 @@ class IcalCodec {
 	}
 
 	/**
-	 * The block for *task*. Its times are written in UTC: a TZID would need a
-	 * VTIMEZONE definition (RFC 5545 3.2.19), which clients without that
-	 * zone's rules cannot do without.
+	 * The block for *task*, or for part *part* of *partCount* when the task is
+	 * split. Its times are written in UTC: a TZID would need a VTIMEZONE
+	 * definition (RFC 5545 3.2.19), which clients without that zone's rules
+	 * cannot do without.
 	 */
-	public static function buildSlotEvent(Task $task, \DateTimeImmutable $start, \DateTimeImmutable $end, ?\DateTimeImmutable $now = null): string {
+	public static function buildSlotEvent(Task $task, \DateTimeImmutable $start, \DateTimeImmutable $end, ?\DateTimeImmutable $now = null, ?int $part = null, ?int $partCount = null): string {
 		$utc = new \DateTimeZone('UTC');
 		$vcal = new VCalendar();
 		$vcal->PRODID = '-//Nextcloud//CalPlan//EN';
 		$vevent = $vcal->createComponent('VEVENT');
-		$vevent->UID = Defaults::SLOT_UID_PREFIX . $task->id;
+		$vevent->UID = Defaults::SLOT_UID_PREFIX . self::slotKey($task->id, $part);
+		if ($part !== null && $partCount !== null) {
+			$vevent->add(Defaults::SLOT_PART_PROP, $part . '/' . $partCount);
+		}
 		$vevent->DTSTART = $start->setTimezone($utc);
 		$vevent->DTEND = $end->setTimezone($utc);
 		$vevent->STATUS = 'CONFIRMED';
@@ -473,7 +493,7 @@ class IcalCodec {
 		// the next reconcile. PERCENT-COMPLETE is VTODO-only in strict RFC 5545,
 		// so it is folded into the DESCRIPTION prefix, not emitted on the VEVENT.
 		// The SUMMARY carries the lock/urgent prefix from slotContent (1.6.3).
-		$content = self::slotContent($task, $now);
+		$content = self::slotContent($task, $now, $part, $partCount);
 		$vevent->SUMMARY = $content['summary'];
 		if ($content['priority'] !== null) {
 			$vevent->PRIORITY = $content['priority'];

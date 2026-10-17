@@ -109,6 +109,7 @@ class ConfigController extends OCSController {
 		?int $autoRescheduleMinutes = null,
 		?int $dailyTaskCount = null,
 		?int $planningDays = null,
+		?int $minPartMinutes = null,
 	): DataResponse {
 		$uid = $this->userId();
 		$current = $this->configService->getSchedulingPolicy($uid);
@@ -123,6 +124,7 @@ class ConfigController extends OCSController {
 				$autoRescheduleMinutes ?? $current['autoRescheduleMinutes'],
 				$dailyTaskCount ?? $current['dailyTaskCount'],
 				$planningDays ?? $current['planningDays'],
+				$minPartMinutes ?? $current['minPartMinutes'],
 			);
 		} catch (\InvalidArgumentException $e) {
 			return new DataResponse(['error' => $e->getMessage()], Http::STATUS_BAD_REQUEST);

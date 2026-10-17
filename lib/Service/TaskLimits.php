@@ -14,17 +14,19 @@ use OCA\AutoSchedule\Model\Task;
 /**
  * A task tree is planned as a whole. Settings set on a task apply to the task
  * and all its subtasks: per-day limits (a course limited to 2 h and 3 blocks a
- * day caps the sum of its lessons' blocks). The top task's due date, start and
- * priority rule the whole tree, and the subtasks follow each other in the
- * tree's depth-first order, siblings in Tasks' manual order.
+ * day caps the sum of its lessons' blocks) and "split if needed". The top
+ * task's due date, start and priority rule the whole tree, and the subtasks
+ * follow each other in the tree's depth-first order, siblings in Tasks'
+ * manual order.
  */
 final class TaskLimits {
 	/**
 	 * Attach to every task its relationships within the calendar and what it
 	 * inherits along its RELATED-TO parent chain: the parent's and subtasks'
-	 * titles, the limits of itself and each ancestor, the ancestors' UIDs and
-	 * titles, the top ancestor's due date, start and priority, its position in
-	 * the tree, and whether it is a container.
+	 * titles, the limits of itself and each ancestor, whether itself or any
+	 * ancestor allows splitting, the ancestors' UIDs and titles, the top
+	 * ancestor's due date, start and priority, its position in the tree, and
+	 * whether it is a container.
 	 *
 	 * A parent link that closes a cycle (A -> B -> A, or a task naming itself)
 	 * is ignored, so every task of the cycle is planned on its own. A
@@ -65,6 +67,7 @@ final class TaskLimits {
 		$out = [];
 		foreach ($tasks as $task) {
 			$groups = [];
+			$canSplit = false;
 			$ancestors = [];
 			$ancestorTitles = [];
 			$sequence = [];
@@ -81,6 +84,7 @@ final class TaskLimits {
 				if ($node->dailyLimitMinutes > 0 || $node->dailyLimitBlocks > 0) {
 					$groups[] = ['id' => $node->id, 'minutes' => $node->dailyLimitMinutes, 'blocks' => $node->dailyLimitBlocks];
 				}
+				$canSplit = $canSplit || $node->splittable;
 			}
 			// The path from the top (open) ancestor down: each level's sibling position.
 			for ($node = $task; $node !== $root; $node = $byUid[$parentOf[$node->id]]) {
@@ -89,9 +93,9 @@ final class TaskLimits {
 			$parentTitle = isset($parentOf[$task->id]) ? $byUid[$parentOf[$task->id]]->title : null;
 			$related = $task->withRelationships($parentTitle, array_map(fn (Task $child) => $child->title, $children[$task->id] ?? []));
 			$hasScheduledSubtasks = self::hasScheduledBelow($task->id, $children, $scheduledBelow);
-			$out[] = $groups === [] && $ancestors === [] && !$hasScheduledSubtasks
+			$out[] = $groups === [] && !$canSplit && $ancestors === [] && !$hasScheduledSubtasks
 				? $related
-				: $related->withInherited($groups, $ancestors, $root->due, $root->priority, $sequence, $ancestorTitles, $hasScheduledSubtasks, $root->start);
+				: $related->withInherited($groups, $canSplit, $ancestors, $root->due, $root->priority, $sequence, $ancestorTitles, $hasScheduledSubtasks, $root->start);
 		}
 		return $out;
 	}
