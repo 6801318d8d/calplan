@@ -29,7 +29,7 @@ class ReconcileService {
 	private const BIRTHDAY_CALENDAR_URI = 'contact_birthdays';
 	/** How long a reconcile waits for the user's running one to finish. */
 	public const LOCK_WAIT_SECONDS = 30;
-	public const TRIGGERS = ['manual', 'background', 'task_change'];
+	public const TRIGGERS = ['manual', 'background', 'task_change', 'event_change'];
 
 	/** @var array<string,mixed>|null the report of the last reconcileUser() call */
 	private ?array $lastReport = null;
@@ -330,11 +330,12 @@ class ReconcileService {
 			$this->logger->warning('CalPlan could not remember the time spent today', ['app' => 'calplan', 'exception' => $e]);
 		}
 
-		// Lets the listener and cron skip users with nothing to plan.
+		// Lets the event-change listener and cron skip users with nothing to plan.
 		$this->config->setPlanActive($userId, $plans !== []);
 		$this->config->addRewrittenTasks($userId, $rewritten, $now->getTimestamp());
 
 		$report = [
+			'runId' => bin2hex(random_bytes(6)),
 			'timestamp' => $now->format(DATE_ATOM),
 			'trigger' => in_array($trigger, self::TRIGGERS, true) ? $trigger : 'other',
 			'processReview' => $processReview,

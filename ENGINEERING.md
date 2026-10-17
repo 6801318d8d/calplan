@@ -42,7 +42,7 @@ No database tables are required.
 ## Reconcile flow
 
 ```text
- task create, edit, delete, move ── listener ────────── DeferredReplans (end of request)
+ task / event create, edit, delete, move ── listener ── DeferredReplans (end of request)
  cron (ReconcileJob, every 5 min) ───────────────────────┤
  Reconcile button, settings saves (OCS) ─────────────────┤
                                                          ▼
@@ -84,17 +84,19 @@ diagnostics and retried by the next run.
 ### Calendar object changes
 
 `CalendarObjectChangeListener` listens for the public Nextcloud calendar object
-create, update, delete, trash, restore and move events of tasks. It does not
-plan inside the event: it notes the calendar's owner and `DeferredReplans`
-re-plans once when the request ends. That keeps the re-plan out of
-CalDavBackend's write transaction, and turns an import into one re-plan instead
-of one per task. The response still waits for the re-plan, so a client reading
-the plan after its write sees the new one. Event changes are picked up by the
-next background or manual run.
+create, update, delete, trash, restore and move events (tasks and events). It
+does not plan inside the event: it notes the users concerned (the calendar's
+owner, and the user who made the change when that is a sharee) and
+`DeferredReplans` re-plans each once when the request ends. That keeps the
+re-plan out of CalDavBackend's write transaction, and turns an import or a
+birthday-calendar sync into one re-plan instead of one per object. The response
+still waits for the re-plan, so a client reading the plan after its write sees
+the new one.
 
-The listener skips CalPlan's own writes, users the app is not enabled for, and
-users whose last reconcile had nothing to plan (unless the task carries
-`calplan`).
+The listener skips CalPlan's own writes and blocks, users the app is not enabled
+for, users whose last reconcile had nothing to plan (unless the task carries
+`calplan`), the birthday calendar, and a created, deleted or restored event that
+is transparent or outside the planning window.
 
 A run that would rewrite the very task a client is saving (a paused task
 restarted from another client) leaves that to the next review run, so the
@@ -301,8 +303,9 @@ script adds:
 - the Tasks sidebar Auto-schedule switch and the Duration row (disabled for
   tasks Tasks cannot save);
 - task-list badges;
-- Reconcile and help actions in Tasks and Calendar; and
-- latest-run status in the help dialog.
+- Reconcile and help actions in Tasks and Calendar;
+- latest-run status in the help dialog; and
+- in Calendar, a refresh after an edit whose re-plan moved blocks.
 
 The integration is runtime DOM/Vuex/Pinia integration. It has no build step and
 does not modify the Tasks or Calendar source trees. Strings go through
@@ -350,3 +353,5 @@ documentation files.
 - Generated event moves are not interpreted as user pins.
 - Working hours hold one window per weekday (Nextcloud availability with several
   slots a day becomes one window from the first to the last).
+- An event update cannot be filtered by its old time (Nextcloud passes only the
+  new data), so every update of a plan-active user re-plans.

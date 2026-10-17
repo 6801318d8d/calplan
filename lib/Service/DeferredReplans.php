@@ -12,13 +12,14 @@ namespace OCA\AutoSchedule\Service;
 use Psr\Log\LoggerInterface;
 
 /**
- * Re-plans asked for while a request writes tasks, run once per user when
- * the request ends (CalendarObjectChangeListener). Running them then, rather
- * than inside the event, keeps them out of CalDavBackend's write transaction
- * (whose sync token another write may be updating), and an import or any
- * other request writing many tasks costs one re-plan instead of one per task.
- * The response is still sent after the re-plan, so a client reading the plan
- * right after its write sees the new one.
+ * Re-plans asked for while a request writes calendar objects, run once per
+ * user when the request ends (CalendarObjectChangeListener). Running them
+ * then, rather than inside the event, keeps them out of CalDavBackend's
+ * write transaction (whose sync token another write may be updating), and an
+ * import, a birthday-calendar sync or any other request writing many objects
+ * costs one re-plan instead of one per object. The response is still sent
+ * after the re-plan, so a client reading the plan right after its write sees
+ * the new one.
  */
 final class DeferredReplans {
 	/** @var array<string, string> trigger by user id */
@@ -32,7 +33,10 @@ final class DeferredReplans {
 	}
 
 	public function add(string $userId, string $trigger): void {
-		self::$pending[$userId] = $trigger;
+		// A task change names the run when both kinds of object changed.
+		if (!isset(self::$pending[$userId]) || $trigger === 'task_change') {
+			self::$pending[$userId] = $trigger;
+		}
 		if (!self::$registered) {
 			self::$registered = true;
 			register_shutdown_function([$this, 'flush']);

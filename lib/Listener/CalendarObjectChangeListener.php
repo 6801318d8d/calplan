@@ -10,14 +10,20 @@ declare(strict_types=1);
  * OCP\Calendar\Events\{CalendarObjectCreated,CalendarObjectUpdated,
  * CalendarObjectDeleted,CalendarObjectMovedToTrash,CalendarObjectRestored,
  * CalendarObjectMoved}Event, dispatched by CalDavBackend via dispatchTyped —
- * and, for VTODO changes only, re-plans the calendar's owner when the request
- * ends (DeferredReplans). Fixes orphan slots on task delete and
- * re-places/re-mirrors on task edits, including adding or removing
- * DTSTART/DUE. VEVENT writes are left to the cron/on-demand pass.
+ * and re-plans the users the change concerns when the request ends
+ * (DeferredReplans): the calendar's owner and the user who made the change
+ * (a sharee writing to a shared calendar, whose busy time it is too).
  *
- * Skipped: CalPlan's own writes, users the app is not enabled for, and users
- * whose last reconcile had nothing to plan (ConfigService::isPlanActive),
- * unless the task carries `calplan`.
+ * - VTODO changes: fixes orphan slots on task delete and re-places/re-mirrors on
+ *   task edits, including adding or removing DTSTART/DUE.
+ * - VEVENT changes: an ordinary event changes busy time, so blocks move at once
+ *   instead of at the next cron pass.
+ *
+ * Skipped: CalPlan's own writes and blocks, users the app is not enabled for,
+ * users whose last reconcile had nothing to plan (ConfigService::isPlanActive;
+ * for a task, unless it carries `calplan`), the birthday calendar, and a
+ * created, deleted or restored event that is transparent or outside the
+ * planning window.
  */
 
 namespace OCA\AutoSchedule\Listener;
@@ -26,24 +32,30 @@ use OCA\AutoSchedule\AppInfo\Application;
 use OCA\AutoSchedule\Model\Defaults;
 use OCA\AutoSchedule\Service\ConfigService;
 use OCA\AutoSchedule\Service\DeferredReplans;
+use OCA\AutoSchedule\Service\IcalCodec;
 use OCA\AutoSchedule\Service\ReconcileRunGuard;
 use OCP\App\IAppManager;
 use OCP\Calendar\Events\AbstractCalendarObjectEvent;
 use OCP\Calendar\Events\CalendarObjectDeletedEvent;
 use OCP\Calendar\Events\CalendarObjectMovedEvent;
+use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\IUserManager;
+use OCP\IUserSession;
 
 /**
  * @template-implements IEventListener<AbstractCalendarObjectEvent|CalendarObjectMovedEvent>
  */
 class CalendarObjectChangeListener implements IEventListener {
+	private const BIRTHDAY_CALENDAR_URI = 'contact_birthdays';
+
 	public function __construct(
 		private DeferredReplans $replans,
 		private ConfigService $config,
 		private IAppManager $appManager,
 		private IUserManager $userManager,
+		private IUserSession $userSession,
 	) {
 	}
 
@@ -54,7 +66,7 @@ class CalendarObjectChangeListener implements IEventListener {
 
 		// CalendarObjectMovedEvent is not an AbstractCalendarObjectEvent. A move
 		// matters when either side is watched: into a watched calendar it adds a
-		// task, out of one it orphans a block.
+		// task or busy time, out of one it orphans a block or frees time.
 		if ($event instanceof CalendarObjectMovedEvent) {
 			$objectData = $event->getObjectData();
 			$sides = [$event->getTargetCalendarData(), $event->getSourceCalendarData()];
@@ -74,33 +86,72 @@ class CalendarObjectChangeListener implements IEventListener {
 		// fallbacks for compatible payloads.
 		$component = strtoupper((string)($objectData['component'] ?? $objectData['componenttype'] ?? ''));
 		$raw = (string)($objectData['calendardata'] ?? '');
-		if (!str_contains($component, 'VTODO') && !($component === '' && stripos($raw, 'BEGIN:VTODO') !== false)) {
+		if (str_contains($component, 'VTODO') || ($component === '' && stripos($raw, 'BEGIN:VTODO') !== false)) {
+			$trigger = 'task_change';
+		} elseif (str_contains($component, 'VEVENT') || ($component === '' && stripos($raw, 'BEGIN:VEVENT') !== false)) {
+			if (str_starts_with((string)($objectData['uri'] ?? ''), Defaults::SLOT_UID_PREFIX)) {
+				return; // a CalPlan block
+			}
+			$trigger = 'event_change';
+		} else {
 			return;
 		}
 
+		$actor = $this->userSession->getUser()?->getUID();
 		$users = [];
 		foreach ($sides as $calendarData) {
 			$owner = self::ownerOf($calendarData);
+			$uri = (string)($calendarData['uri'] ?? '');
+			if ($owner === null || $uri === self::BIRTHDAY_CALENDAR_URI) {
+				continue;
+			}
 			// CalPlan neither reads nor writes ignored calendars: a change only
-			// there needs no re-plan.
-			if ($owner !== null && !in_array((string)($calendarData['uri'] ?? ''), $this->config->getIgnoredCalendars($owner), true)) {
+			// there needs no re-plan. A sharee knows the calendar under
+			// "<uri>_shared_by_<owner>".
+			if (!in_array($uri, $this->config->getIgnoredCalendars($owner), true)) {
 				$users[$owner] = true;
 			}
+			if ($actor !== null && $actor !== $owner
+				&& !in_array($uri . '_shared_by_' . $owner, $this->config->getIgnoredCalendars($actor), true)) {
+				$users[$actor] = true;
+			}
 		}
+		// The object's content is the same before and after a move, a creation
+		// or a deletion; only an update may have moved it from elsewhere.
+		$contentIsWhole = !($event instanceof CalendarObjectUpdatedEvent);
 		$flagged = stripos($raw, Defaults::FLAG_CATEGORY) !== false;
 		foreach (array_keys($users) as $userId) {
 			$userId = (string)$userId;
 			$active = $this->config->isPlanActive($userId) || $this->config->getFlaggedCalendars($userId) !== [];
-			if (!$this->isEnabledFor($userId) || (!$active && !$flagged)) {
+			if (!$this->isEnabledFor($userId)
+				|| (!$active && !($trigger === 'task_change' && $flagged))
+				|| ($trigger === 'event_change' && $contentIsWhole && $raw !== '' && !$this->mayBeBusy($userId, $raw))) {
 				continue;
 			}
-			$this->replans->add($userId, 'task_change');
+			$this->replans->add($userId, $trigger);
 		}
 	}
 
 	private function isEnabledFor(string $userId): bool {
 		$user = $this->userManager->get($userId);
 		return $user !== null && $this->appManager->isEnabledForUser(Application::APP_ID, $user);
+	}
+
+	/** Whether an event of *raw* is opaque and lies (partly) in the user's planning window. */
+	private function mayBeBusy(string $userId, string $raw): bool {
+		try {
+			$tz = $this->config->getUserTimeZone($userId);
+			$from = (new \DateTimeImmutable('now', $tz))->modify('-1 day');
+			$until = $from->modify('+' . ($this->config->getPlanningDays($userId) + 2) . ' days');
+			foreach (IcalCodec::parseEvents($raw, $from, $until, $tz) as $event) {
+				if (($event->transp ?? null) !== 'TRANSPARENT' && $event->end > $from && $event->start < $until) {
+					return true;
+				}
+			}
+			return false;
+		} catch (\Throwable $_) {
+			return true; // unreadable: let the re-plan decide
+		}
 	}
 
 	/** The user id of a principals/users/<userId> calendar, or null. */

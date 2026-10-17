@@ -43,9 +43,9 @@ CalPlan plans and writes only in your own calendars. Tasks in a calendar someone
 shared with you are planned by its owner's CalPlan; its events, like those of
 subscriptions and federated calendars, count as your busy time.
 
-Nextcloud background jobs should also be configured. Task edits are handled
-immediately, but calendar-event changes and timed review checks depend on the
-background job or a manual **Reconcile CalPlan** run.
+Nextcloud background jobs should also be configured. Task and calendar-event
+edits are handled immediately, but timed review checks depend on the background
+job or a manual **Reconcile CalPlan** run.
 
 ## Using CalPlan
 
@@ -152,9 +152,13 @@ constraints. This is a future direction, not behavior implemented in 0.9.11.
 
 - **Task changes:** task create, edit, completion, deletion, or trash triggers an
   immediate reconcile, once per save request, before the request returns.
-- **Calendar-event changes:** picked up by the background job or manual
-  Reconcile. Saving an ordinary meeting does not run a full schedule inside the
-  save request.
+- **Calendar-event changes:** creating, editing, moving, deleting, trashing, or
+  restoring an ordinary event triggers an immediate reconcile at the end of the
+  save request, from any CalDAV client, for the calendar's owner and for the
+  user who saved it. CalPlan's own blocks never trigger one, nor do transparent
+  events or events outside the planning window, and users whose last reconcile
+  had no tasks or blocks skip it entirely. In Calendar, the view refreshes at
+  once when such a reconcile moved blocks.
 - **Manual:** **Reconcile CalPlan** is available in Tasks and Calendar.
 - **Background:** the registered job is eligible every five minutes. Actual run
   time depends on Nextcloud's background-job runner.

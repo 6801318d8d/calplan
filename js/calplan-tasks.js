@@ -11,7 +11,8 @@
  * clients). Nothing breaks.
  *
  * What it does, only on the Tasks and Calendar app routes:
- *   1. Both apps — adds the Reconcile CalPlan navigation action and shared help.
+ *   1. Both apps — adds the Reconcile CalPlan navigation action and shared
+ *      help; in Calendar, refreshes the view when an edit re-planned blocks.
  *
  * Tasks-only behavior:
  *   2. Task list — renders a small SVG "CalPlan" icon next to any task that
@@ -407,6 +408,104 @@
 		}
 	}
 
+	// --- Calendar page ---------------------------------------------------
+
+	/** A Pinia store of the Calendar app (mounted on #content), or null. */
+	function calendarStore(id) {
+		var content = document.querySelector('#content')
+		var app = content && content.__vue_app__
+		var pinia = app && app.config && app.config.globalProperties && app.config.globalProperties.$pinia
+		return pinia && pinia._s && typeof pinia._s.get === 'function' ? pinia._s.get(id) || null : null
+	}
+
+	/** The current sync token of the CalDAV collection *url*, or null. */
+	function fetchSyncToken(url) {
+		return fetch(url, {
+			method: 'PROPFIND',
+			credentials: 'same-origin',
+			headers: { 'Depth': '0', 'Content-Type': 'application/xml; charset=utf-8', 'requesttoken': (window.OC && OC.requestToken) || '' },
+			body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:sync-token/></d:prop></d:propfind>',
+		}).then(function (response) {
+			return response.ok ? response.text() : ''
+		}).then(function (xml) {
+			var doc = xml ? new DOMParser().parseFromString(xml, 'application/xml') : null
+			var node = doc && doc.getElementsByTagNameNS('DAV:', 'sync-token')[0]
+			return node ? node.textContent : null
+		}).catch(function () { return null })
+	}
+
+	/**
+	 * On the Calendar page, show a new plan now instead of at Calendar's next
+	 * 60-second background sync. Like that sync, ask each calendar for its
+	 * current sync token and let Calendar's own Pinia action syncCalendar()
+	 * refetch the calendars whose token changed (it drops their cached time
+	 * ranges and bumps modificationCount, which makes FullCalendar refetch)
+	 * and remember the new token. Guarded: a no-op when Calendar's app/store
+	 * is shaped differently.
+	 */
+	function refreshCalendarApp() {
+		if (!isCalendarPath()) return
+		try {
+			var store = calendarStore('calendars')
+			if (!store || typeof store.syncCalendar !== 'function' || !Array.isArray(store.calendars)) return
+			store.calendars.forEach(function (calendar) {
+				var url = calendar && (calendar.url || (calendar.dav && calendar.dav.url))
+				if (!url || !calendar.supportsEvents || calendar.readOnly) return
+				fetchSyncToken(url).then(function (token) {
+					if (token) store.syncCalendar({ calendar: { id: calendar.id, url: url, dav: { syncToken: token } }, skipIfUnchangedSyncToken: true })
+				})
+			})
+		} catch (e) {
+			warn('calendar refresh failed', e)
+		}
+	}
+
+	function runKey(run) {
+		return run ? (run.runId || run.timestamp || '') : ''
+	}
+
+	/** Whether any run in *runs* (newest first) up to the one keyed *since* placed or removed a block. */
+	function movedSince(runs, since) {
+		for (var i = 0; i < runs.length; i++) {
+			if (since && runKey(runs[i]) === since) return false
+			if ((runs[i].placed || 0) > 0 || (runs[i].removed || 0) > 0) return true
+		}
+		return false
+	}
+
+	// Calendar's own actions that write an event or a task (save, drag/resize, delete, move).
+	var CALENDAR_EDIT_ACTIONS = { updateCalendarObject: true, createCalendarObjectFromFork: true, deleteCalendarObject: true, moveCalendarObject: true }
+	var calendarEditsWatched = false
+	var lastSeenRun = null
+
+	/**
+	 * Saving an event or a task re-plans on the server before the save
+	 * request returns (CalendarObjectChangeListener). When Calendar's write
+	 * action finishes, refresh the view if a re-plan since the last check
+	 * moved blocks, so they never sit on top of what was just saved.
+	 */
+	function watchCalendarEdits() {
+		if (calendarEditsWatched || !isCalendarPath()) return
+		var store = calendarStore('calendarObjects')
+		if (!store || typeof store.$onAction !== 'function') return
+		calendarEditsWatched = true
+		loadReconcileStatus().then(function (run) { lastSeenRun = runKey(run) }).catch(function () {})
+		store.$onAction(function (context) {
+			if (!CALENDAR_EDIT_ACTIONS[context.name]) return
+			context.after(function () {
+				var seq = ++statusSeq
+				api('GET', '/reconcile/status').then(function (data) {
+					applyStatus(data, seq)
+					var runs = (data && data.recentRuns) || []
+					if (runs.length === 0 || runKey(runs[0]) === lastSeenRun) return
+					var moved = movedSince(runs, lastSeenRun)
+					lastSeenRun = runKey(runs[0])
+					if (moved) refreshCalendarApp()
+				}).catch(function () {})
+			})
+		})
+	}
+
 	// --- Navigation action and help ------------------------------------------
 
 	var reconcileButton = null
@@ -443,6 +542,7 @@
 				var placed = (data && data.placed) || 0
 				var removed = (data && data.removed) || 0
 				var unscheduled = (data && data.unscheduled) || 0
+				if (placed > 0 || removed > 0) refreshCalendarApp()
 				notify(unscheduled > 0
 					? n('CalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', 'CalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', unscheduled, { placed: placed, removed: removed })
 					: t('CalPlan reconciled: {placed} placed, {removed} removed', { placed: placed, removed: removed }))
@@ -1021,6 +1121,7 @@
 		scanTaskList(document)
 		ensureSidebarCheckbox()
 		ensureReconcileButton()
+		watchCalendarEdits()
 	}
 
 	function init() {
@@ -1034,9 +1135,10 @@
 			scanTaskList(document)
 			ensureSidebarCheckbox()
 			ensureReconcileButton()
+			watchCalendarEdits()
 			var obs = new MutationObserver(onMutate)
 			obs.observe(document.body, { childList: true, subtree: true })
-			if (isCalendarPath()) return // the rest serves the Tasks page
+			if (isCalendarPath()) return // Calendar asks for the status after each edit
 			loadDefaultDuration()
 			// The reconcile status (tasks CalPlan rewrote, to reload): now, then
 			// every minute while the tab is visible (reconciles from cron, other

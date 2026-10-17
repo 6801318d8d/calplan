@@ -42,11 +42,11 @@ class Application extends App implements IBootstrap {
 		// (<background-jobs>) rather than registered here: NC's
 		// IRegistrationContext has no registerBackgroundJob() method.
 
-		// Re-plan on local VTODO changes, once per user at the end of the
-		// request (the listener filters these broad public OCP events by object
-		// component and skips users with nothing to plan). Task edits thus move
-		// blocks before the client gets its answer. VEVENT changes are picked up
-		// by cron or an on-demand reconcile.
+		// Re-plan on local VTODO and VEVENT changes, once per user at the end of
+		// the request (the listener filters these broad public OCP events by
+		// object component, skips CalPlan's own blocks, and skips users with
+		// nothing to plan). Task edits and busy-time changes thus move blocks
+		// before the client gets its answer.
 		$context->registerEventListener(CalendarObjectCreatedEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectUpdatedEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectDeletedEvent::class, CalendarObjectChangeListener::class);
