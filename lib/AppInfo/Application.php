@@ -15,6 +15,7 @@ namespace OCA\AutoSchedule\AppInfo;
 
 use OCA\AutoSchedule\Listener\CalendarObjectChangeListener;
 use OCA\AutoSchedule\Listener\UserDeletedListener;
+use OCP\App\IAppManager;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -25,6 +26,7 @@ use OCP\Calendar\Events\CalendarObjectMovedEvent;
 use OCP\Calendar\Events\CalendarObjectMovedToTrashEvent;
 use OCP\Calendar\Events\CalendarObjectRestoredEvent;
 use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
+use OCP\IUserSession;
 use OCP\User\Events\UserDeletedEvent;
 
 class Application extends App implements IBootstrap {
@@ -59,20 +61,29 @@ class Application extends App implements IBootstrap {
 
 	/** @psalm-suppress UndefinedClass */
 	public function boot(IBootContext $context): void {
-		// Inject the frontend only into Tasks and Calendar. Their navigation action
-		// uses Nextcloud's shared #app-navigation-vue structure, which is also present
-		// in Files and Settings; global asset loading would therefore leak the action
-		// into unrelated apps. The script repeats this route guard client-side as a
-		// defense against webroot/routing differences. On cron/occ (\OC::$CLI) there
-		// is no template to inject into, so skip it.
+		// Inject the frontend only into Tasks and Calendar, for a logged-in user
+		// the app is enabled for (public calendar pages, /p/ and /embed/, have
+		// no CalPlan to talk to). Their navigation action uses Nextcloud's shared
+		// #app-navigation-vue structure, which is also present in Files and
+		// Settings; global asset loading would therefore leak the action into
+		// unrelated apps. The script repeats this route guard client-side as a
+		// defense against webroot/routing differences. On cron/occ (\OC::$CLI)
+		// there is no template to inject into, so skip it.
 		if (class_exists('\\OC', false) && !empty(\OC::$CLI)) {
 			return;
 		}
-		$requestUri = (string)($_SERVER['REQUEST_URI'] ?? '');
-		if (preg_match('#/(?:index\.php/)?apps/(?:tasks|calendar)(?:/|$|\?)#', $requestUri) !== 1) {
+		$path = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+		$webroot = class_exists('\\OC', false) ? (string)\OC::$WEBROOT : '';
+		if (preg_match('#^' . preg_quote($webroot, '#') . '(?:/index\.php)?/apps/(?:tasks|calendar)(?:/(?!p/|embed/|appointment/)|$)#', $path) !== 1) {
 			return;
 		}
-		\OCP\Util::addScript('calplan', 'calplan-tasks');
-		\OCP\Util::addStyle('calplan', 'calplan-tasks');
+		$context->injectFn(function (IUserSession $session, IAppManager $appManager): void {
+			$user = $session->getUser();
+			if ($user === null || !$appManager->isEnabledForUser(self::APP_ID, $user)) {
+				return;
+			}
+			\OCP\Util::addScript(self::APP_ID, 'calplan-tasks');
+			\OCP\Util::addStyle(self::APP_ID, 'calplan-tasks');
+		});
 	}
 }
