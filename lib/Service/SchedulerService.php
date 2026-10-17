@@ -26,7 +26,7 @@ use OCA\AutoSchedule\Model\WorkingHours;
 class SchedulerService {
 	/** Whole calendar days, in the user's timezone (*now*'s), from today to the task's due day; far-future if none. */
 	public function daysUntilDue(Task $task, \DateTimeImmutable $now): float {
-		$due = $task->due;
+		$due = $task->schedulingDue();
 		if ($due === null) {
 			return (float)Defaults::NO_DUE_HORIZON_DAYS;
 		}
@@ -40,20 +40,23 @@ class SchedulerService {
 
 	/** Higher = place first. Weighted Earliest-Deadline-First. */
 	public function rankingScore(Task $task, \DateTimeImmutable $now): float {
-		return $task->weight() / ($this->daysUntilDue($task, $now) + 1.0);
+		return $task->schedulingWeight() / ($this->daysUntilDue($task, $now) + 1.0);
 	}
 
 	/**
 	 * Scheduling precedence tier: 0 = DUE already passed (most overdue), 1 =
 	 * DTSTART already passed (started but not yet due), 2 = on track / future.
 	 * Lower tier is scheduled first. A missed DTSTART is overdue-ish but never
-	 * as overdue as a missed DUE (plan 1.6.3).
+	 * as overdue as a missed DUE (plan 1.6.3). A subtask's tree is ranked by
+	 * its top task's dates (Task::schedulingDue/schedulingStart).
 	 */
 	public function urgencyTier(Task $task, \DateTimeImmutable $now): int {
-		if ($task->due !== null && $task->due <= $now) {
+		$due = $task->schedulingDue();
+		if ($due !== null && $due <= $now) {
 			return 0;
 		}
-		if ($task->start !== null && $task->start <= $now) {
+		$start = $task->schedulingStart();
+		if ($start !== null && $start <= $now) {
 			return 1;
 		}
 		return 2;
@@ -61,20 +64,23 @@ class SchedulerService {
 
 	/** @param Task[] $tasks */
 	private function eligible(array $tasks): array {
-		return array_values(array_filter($tasks, fn (Task $t) => $t->autoSchedule && !$t->isDone()));
+		// A task with subtasks still to schedule is a container: they get the
+		// blocks (the Tasks sidebar switch flags them together), not the parent.
+		// Once none is left (all done, or none flagged) it is planned itself.
+		return array_values(array_filter($tasks, fn (Task $t) => $t->autoSchedule && !$t->isDone() && !$t->hasScheduledSubtasks));
 	}
 
 	/**
 	 * Where *task* can go in *slot*: a block of *minutes* starting at the
 	 * slot's start or later - never before the task's DTSTART (rounded up to
-	 * the 15-minute grid) - that fits in the slot, ends by the DUE when
+	 * the 15-minute grid) or *notBefore* - that fits in the slot, ends by the DUE when
 	 * *respectDue*, and stays within the day's cap and the blocks-per-day
 	 * limit. Null otherwise; a block-count rejection is noted in *why*.
 	 *
 	 * @param array{count: bool} $why
 	 */
-	private function tryFit(PlanState $st, Slot $slot, Task $task, int $minutes, bool $respectDue, array &$why): ?Slot {
-		$start = $this->earliestStart($st, $slot, $task);
+	private function tryFit(PlanState $st, Slot $slot, Task $task, int $minutes, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
+		$start = $this->earliestStart($st, $slot, $task, $notBefore);
 		if ($start >= $slot->end) {
 			return null;
 		}
@@ -82,7 +88,8 @@ class SchedulerService {
 		if ($end > $slot->end) {
 			return null;
 		}
-		if ($respectDue && $task->due !== null && $end > $task->due) {
+		$due = $task->schedulingDue();
+		if ($respectDue && $due !== null && $end > $due) {
 			return null;
 		}
 		$day = $st->day($start);
@@ -100,11 +107,16 @@ class SchedulerService {
 	 * The first moment in *slot* at which *task* may start. Free slots start on
 	 * the 15-minute grid or right after a placed block, so blocks follow each
 	 * other without gaps; a DTSTART off the grid (10:07) is rounded up to it.
+	 * A subtask also waits for its top task's DTSTART (Task::scheduledFrom).
 	 */
-	private function earliestStart(PlanState $st, Slot $slot, Task $task): \DateTimeImmutable {
+	private function earliestStart(PlanState $st, Slot $slot, Task $task, ?\DateTimeImmutable $notBefore): \DateTimeImmutable {
 		$start = $slot->start;
-		if ($task->start !== null && $task->start > $start) {
-			$start = FreeSlotsService::snapUp($task->start->setTimezone($st->tz));
+		$from = $task->scheduledFrom();
+		if ($from !== null && $from > $start) {
+			$start = FreeSlotsService::snapUp($from->setTimezone($st->tz));
+		}
+		if ($notBefore !== null && $notBefore > $start) {
+			$start = $notBefore;
 		}
 		return $start->setTimezone($st->tz);
 	}
@@ -116,17 +128,17 @@ class SchedulerService {
 	 * @param Slot[] $extra per-task DTSTART windows
 	 * @param array{count: bool} $why
 	 */
-	private function earliestFit(PlanState $st, array $extra, Task $task, bool $respectDue, array &$why): ?Slot {
+	private function earliestFit(PlanState $st, array $extra, Task $task, bool $respectDue, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
 		$best = null;
 		// The pool is ordered by start, so its first fit is its earliest one.
 		foreach ($st->slots as $slot) {
-			$best = $this->tryFit($st, $slot, $task, $task->estimatedMinutes, $respectDue, $why);
+			$best = $this->tryFit($st, $slot, $task, $task->estimatedMinutes, $respectDue, $notBefore, $why);
 			if ($best !== null) {
 				break;
 			}
 		}
 		foreach ($extra as $slot) {
-			$fit = $this->tryFit($st, $slot, $task, $task->estimatedMinutes, $respectDue, $why);
+			$fit = $this->tryFit($st, $slot, $task, $task->estimatedMinutes, $respectDue, $notBefore, $why);
 			if ($fit !== null && ($best === null || $fit->start < $best->start)) {
 				$best = $fit;
 			}
@@ -189,8 +201,9 @@ class SchedulerService {
 	 * @param Slot[] $extra
 	 * @param array{count: bool} $why
 	 */
-	private function place(PlanState $st, Task $task, array $extra, array &$why): ?Slot {
-		$block = $this->earliestFit($st, $extra, $task, $task->due !== null && $task->due > $st->now, $why);
+	private function place(PlanState $st, Task $task, array $extra, ?\DateTimeImmutable $notBefore, array &$why): ?Slot {
+		$due = $task->schedulingDue();
+		$block = $this->earliestFit($st, $extra, $task, $due !== null && $due > $st->now, $notBefore, $why);
 		if ($block !== null) {
 			$st->charge($st->day($block->start), $task->estimatedMinutes);
 			$st->occupy($block);
@@ -199,32 +212,68 @@ class SchedulerService {
 	}
 
 	/**
-	 * Placement order: missed deadline first (a missed DUE outranks a missed
-	 * DTSTART, which outranks every on-track task, plan 1.6.3), then weighted
-	 * EDF by score desc, then the exact deadline, then SPT (shorter first),
-	 * then the UID, so that equal tasks always come in the same order.
+	 * Placement order. A task tree - a top task with all its subtasks - is one
+	 * unit, ranked by the top task's due date, start and priority and placed
+	 * in the tree's depth-first sequence (Task::$sequence: Tasks' manual
+	 * order); a task without parent is a unit of its own. Units: missed
+	 * deadline first (a missed DUE outranks a missed DTSTART, which outranks
+	 * every on-track unit, plan 1.6.3), then weighted EDF by score desc, then
+	 * the exact deadline, then SPT (shorter first; a tree by its total).
 	 *
 	 * @param Task[] $candidates
 	 * @return Task[]
 	 */
 	private function placementOrder(array $candidates, \DateTimeImmutable $now): array {
-		usort($candidates, function (Task $a, Task $b) use ($now): int {
-			$byTier = $this->urgencyTier($a, $now) <=> $this->urgencyTier($b, $now);
+		$units = [];
+		foreach ($candidates as $task) {
+			// "\0" keeps a lone task's key apart from any tree's top-task UID.
+			$units["\0" . ($task->rootUid() ?? "\0" . $task->id)][] = $task;
+		}
+		$ranked = [];
+		foreach ($units as $key => $unit) {
+			usort($unit, fn (Task $a, Task $b) => self::compareSequence($a->sequence, $b->sequence));
+			$ranked[] = [
+				'key' => (string)$key,
+				// Every task of a unit has the same scheduling due date, start and priority.
+				'lead' => $unit[0],
+				'tasks' => $unit,
+				'minutes' => array_sum(array_map(fn (Task $t) => $t->estimatedMinutes, $unit)),
+			];
+		}
+		usort($ranked, function (array $a, array $b) use ($now): int {
+			$byTier = $this->urgencyTier($a['lead'], $now) <=> $this->urgencyTier($b['lead'], $now);
 			if ($byTier !== 0) {
 				return $byTier;
 			}
-			$byScore = $this->rankingScore($b, $now) <=> $this->rankingScore($a, $now);
+			$byScore = $this->rankingScore($b['lead'], $now) <=> $this->rankingScore($a['lead'], $now);
 			if ($byScore !== 0) {
 				return $byScore;
 			}
-			$byDue = ($a->due?->getTimestamp() ?? PHP_INT_MAX) <=> ($b->due?->getTimestamp() ?? PHP_INT_MAX);
+			$byDue = ($a['lead']->schedulingDue()?->getTimestamp() ?? PHP_INT_MAX) <=> ($b['lead']->schedulingDue()?->getTimestamp() ?? PHP_INT_MAX);
 			if ($byDue !== 0) {
 				return $byDue;
 			}
-			$byLength = $a->estimatedMinutes <=> $b->estimatedMinutes;
-			return $byLength !== 0 ? $byLength : strcmp($a->id, $b->id);
+			$byLength = $a['minutes'] <=> $b['minutes'];
+			return $byLength !== 0 ? $byLength : strcmp($a['key'], $b['key']);
 		});
-		return $candidates;
+		$out = [];
+		foreach ($ranked as $unit) {
+			foreach ($unit['tasks'] as $task) {
+				$out[] = $task;
+			}
+		}
+		return $out;
+	}
+
+	/** Lexicographic order of two sibling-position paths (a prefix comes first). */
+	private static function compareSequence(array $a, array $b): int {
+		$n = min(count($a), count($b));
+		for ($i = 0; $i < $n; $i++) {
+			if ($a[$i] !== $b[$i]) {
+				return $a[$i] <=> $b[$i];
+			}
+		}
+		return count($a) <=> count($b);
 	}
 
 	/**
@@ -269,10 +318,28 @@ class SchedulerService {
 			}
 		}
 
+		// Subtasks of a common parent run in sequence, in the ranking order: a
+		// task never starts before the end of the last block already placed
+		// under any of its ancestors (so a later lesson cannot fill a gap before
+		// an earlier one). Tasks without a parent stay free to fill any gap.
+		$sequenceEnd = [];
 		$outcomes = [];
 		foreach ($candidates as $task) {
 			$why = ['count' => false];
-			$block = $pins[$task->id] ?? $this->place($st, $task, $this->dtstartSlots($st, $task), $why);
+			$notBefore = null;
+			foreach ($task->ancestors as $ancestor) {
+				if (isset($sequenceEnd[$ancestor]) && ($notBefore === null || $sequenceEnd[$ancestor] > $notBefore)) {
+					$notBefore = $sequenceEnd[$ancestor];
+				}
+			}
+			$block = $pins[$task->id] ?? $this->place($st, $task, $this->dtstartSlots($st, $task), $notBefore, $why);
+			if ($block !== null) {
+				foreach ($task->ancestors as $ancestor) {
+					if (!isset($sequenceEnd[$ancestor]) || $block->end > $sequenceEnd[$ancestor]) {
+						$sequenceEnd[$ancestor] = $block->end;
+					}
+				}
+			}
 			$outcomes[$task->id] = new PlacementResult($block, $block === null ? $this->unscheduledReason($task, $st, $why) : null);
 		}
 		return $outcomes;
@@ -295,7 +362,8 @@ class SchedulerService {
 			return 'daily_task_count_reached';
 		}
 		$horizonEnd = $st->now->setTime(0, 0)->modify('+' . $st->horizonDays . ' days');
-		if ($task->start !== null && $task->start >= $horizonEnd) {
+		$from = $task->scheduledFrom();
+		if ($from !== null && $from >= $horizonEnd) {
 			return 'starts_after_horizon';
 		}
 		$maxWindow = 0;
@@ -314,7 +382,8 @@ class SchedulerService {
 		if ($task->estimatedMinutes > $maxWindow && $task->start === null) {
 			return 'duration_exceeds_openings';
 		}
-		if ($task->due !== null && $task->due > $st->now) {
+		$due = $task->schedulingDue();
+		if ($due !== null && $due > $st->now) {
 			return 'no_fit_before_due';
 		}
 		return 'no_capacity_within_horizon';

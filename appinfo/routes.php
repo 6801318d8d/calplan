@@ -26,5 +26,8 @@ return [
 		// to drive ReconcileService directly.
 		['name' => 'Reconcile#reconcileNow', 'url' => '/api/v1/reconcile', 'verb' => 'POST'],
 		['name' => 'Reconcile#getStatus', 'url' => '/api/v1/reconcile/status', 'verb' => 'GET'],
+		// Hold back the per-write re-plans while the client writes many tasks
+		// (a parent's Auto-schedule switch); it then calls /reconcile once.
+		['name' => 'Reconcile#hold', 'url' => '/api/v1/reconcile/hold', 'verb' => 'POST'],
 	],
 ];

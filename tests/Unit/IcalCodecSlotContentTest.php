@@ -39,6 +39,7 @@ class IcalCodecSlotContentTest extends TestCase {
 			$over['hasChildren'] ?? false,
 			$over['parentTitle'] ?? null,
 			$over['childTitles'] ?? [],
+			ancestorTitles: $over['ancestorTitles'] ?? [],
 		);
 	}
 
@@ -121,8 +122,13 @@ class IcalCodecSlotContentTest extends TestCase {
 	}
 
 	public function testStructuredDescriptionNamesParentTask(): void {
-		$t = $this->task(['parentUid' => 'parent-1', 'parentTitle' => 'Prepare release', 'priority' => 0]);
+		$t = $this->task(['parentUid' => 'parent-1', 'parentTitle' => 'Prepare release', 'priority' => 0, 'ancestorTitles' => ['Prepare release']]);
 		$this->assertSame("---Task---\nTitle: My task\nParent task: ↳ Prepare release", IcalCodec::structuredDescription($t));
+	}
+
+	public function testStructuredDescriptionShowsTheFullParentPath(): void {
+		$t = $this->task(['parentUid' => 'module-1', 'parentTitle' => 'Module 1', 'priority' => 0, 'ancestorTitles' => ['Module 1', 'Course']]);
+		$this->assertSame("---Task---\nTitle: My task\nParent task: ↳ Course › Module 1", IcalCodec::structuredDescription($t));
 	}
 
 	public function testStructuredDescriptionNamesImmediateSubtasks(): void {

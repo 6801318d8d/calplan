@@ -21,9 +21,10 @@ declare(strict_types=1);
  *
  * Skipped: CalPlan's own writes and blocks, users the app is not enabled for,
  * users whose last reconcile had nothing to plan (ConfigService::isPlanActive;
- * for a task, unless it carries `calplan`), the birthday calendar, and a
- * created, deleted or restored event that is transparent or outside the
- * planning window.
+ * for a task, unless it carries `calplan`), users whose client holds the
+ * re-plans back while it writes many tasks (ConfigService::holdReplans), the
+ * birthday calendar, and a created, deleted or restored event that is
+ * transparent or outside the planning window.
  */
 
 namespace OCA\AutoSchedule\Listener;
@@ -124,6 +125,7 @@ class CalendarObjectChangeListener implements IEventListener {
 			$userId = (string)$userId;
 			$active = $this->config->isPlanActive($userId) || $this->config->getFlaggedCalendars($userId) !== [];
 			if (!$this->isEnabledFor($userId)
+				|| $this->config->areReplansHeld($userId, time())
 				|| (!$active && !($trigger === 'task_change' && $flagged))
 				|| ($trigger === 'event_change' && $contentIsWhole && $raw !== '' && !$this->mayBeBusy($userId, $raw))) {
 				continue;

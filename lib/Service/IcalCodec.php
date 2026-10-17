@@ -84,6 +84,10 @@ class IcalCodec {
 				$estimatedMinutes = $defaultEstimateMinutes;
 			}
 			$percentRaw = self::stringProp($vtodo, 'PERCENT-COMPLETE');
+			// Manual order among siblings, as Nextcloud Tasks keeps it: the Apple
+			// X-APPLE-SORT-ORDER, defaulting to seconds since 2001-01-01 of CREATED.
+			$sortRaw = self::stringProp($vtodo, 'X-APPLE-SORT-ORDER');
+			$created = self::dateTimeProp($vtodo, 'CREATED', $tz);
 			$tasks[] = new Task(
 				id: $uid,
 				title: $title,
@@ -100,9 +104,12 @@ class IcalCodec {
 				// Parent/child: the Tasks app marks a child VTODO with
 				// RELATED-TO;RELTYPE=PARENT:<parent-uid> (a RELATED-TO with no
 				// RELTYPE is also a parent link). The relationships are resolved
-				// across the whole calendar in CalendarRepository::getTasks (plan 0.9.1).
+				// across the whole calendar in TaskLimits::resolve (plan 0.9.1).
 				parentUid: self::relatedToParent($vtodo),
 				categories: $categories,
+				sortOrder: preg_match('/^-?\d+$/', trim($sortRaw)) === 1
+					? (int)trim($sortRaw)
+					: ($created !== null ? $created->getTimestamp() - 978307200 : 0),
 				startAllDay: $startAllDay,
 				classification: self::nonEmpty(strtoupper(trim(self::stringProp($vtodo, 'CLASS')))),
 			);
@@ -302,8 +309,9 @@ class IcalCodec {
 			}
 			$meta[] = $line;
 		}
-		if ($task->parentTitle !== null) {
-			$meta[] = 'Parent task: ↳ ' . $task->parentTitle;
+		if ($task->ancestorTitles !== []) {
+			// The whole chain, top task first: "Course › Module".
+			$meta[] = 'Parent task: ↳ ' . implode(' › ', array_reverse($task->ancestorTitles));
 		} elseif ($task->parentUid !== null) {
 			// The parent is not in this calendar.
 			$meta[] = 'Parent task: ↳';
@@ -368,8 +376,10 @@ class IcalCodec {
 
 	/** A task is "already late" when its DTSTART or DUE has passed. */
 	private static function isUrgent(Task $task, \DateTimeImmutable $now): bool {
+		// A subtask is late only when its tree's deadline (the top task's) is.
+		$due = $task->schedulingDue();
 		return ($task->start !== null && $task->start <= $now)
-			|| ($task->due !== null && $task->due <= $now);
+			|| ($due !== null && $due <= $now);
 	}
 
 	/**

@@ -84,6 +84,13 @@ class IcalCodecTest extends TestCase {
 		$this->assertFalse(IcalCodec::parseTasks($this->vtodo("DTSTART:20260820T090000Z\r\n"))[0]->startAllDay);
 	}
 
+	public function testParseTasksReadsTheManualSortOrder(): void {
+		$this->requireSabre();
+		$this->assertSame(42, IcalCodec::parseTasks($this->vtodo("X-APPLE-SORT-ORDER:42\r\nCREATED:20261016T200000Z\r\n"))[0]->sortOrder);
+		// Without it, like Nextcloud Tasks: seconds from 2001-01-01 to CREATED.
+		$this->assertSame(60, IcalCodec::parseTasks($this->vtodo("CREATED:20010101T000100Z\r\n"))[0]->sortOrder);
+	}
+
 	public function testBlockRoundTrip(): void {
 		$this->requireSabre();
 		$task = new \OCA\AutoSchedule\Model\Task('task-1', 'Do a thing', estimatedMinutes: 60, autoSchedule: true);

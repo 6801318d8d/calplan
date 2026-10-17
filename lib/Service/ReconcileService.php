@@ -212,13 +212,14 @@ class ReconcileService {
 			$taskCount += count($tasks);
 			$calendarDiagnostics[$uri]['tasksRead'] = count($tasks);
 			if (isset($flaggedUris[$uri])) {
-				// A calendar flagged as a whole schedules every open task in it.
-				$tasks = array_map(
+				// A calendar flagged as a whole schedules every open task in it
+				// (parents with open subtasks then being containers).
+				$tasks = TaskLimits::resolve(array_map(
 					fn (Task $task) => $task->isDone() || $task->autoSchedule || $this->config->isTaskPaused($userId, $task->id) || (!$autoReschedule && $task->needsReview())
 						? $task
 						: $task->withAutoSchedule(),
 					$tasks,
-				);
+				));
 			}
 			$toSchedule = [];
 			foreach ($tasks as $task) {
@@ -238,7 +239,9 @@ class ReconcileService {
 				// A Tasks-only list cannot show an event: its tasks get no block
 				// (and blocks stored there earlier are removed).
 				foreach ($toSchedule as $task) {
-					$unscheduled[(string)$task->id] = 'calendar_without_events';
+					if (!$task->hasScheduledSubtasks) {
+						$unscheduled[(string)$task->id] = 'calendar_without_events';
+					}
 				}
 				$toSchedule = [];
 			}

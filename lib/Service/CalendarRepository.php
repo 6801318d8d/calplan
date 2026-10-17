@@ -157,26 +157,7 @@ class CalendarRepository {
 				$tasks[] = $t->withSource($calendarUri, (string)$objectUri, $t->categories);
 			}
 		}
-		// Resolve parent/child: a task "has children" when another VTODO in
-		// this calendar points at it via RELATED-TO;RELTYPE=PARENT (plan 0.9.1).
-		// The child's parentUid is already parsed by IcalCodec; here we mark the
-		// parents so IcalCodec::slotContent can emit the ↴/↳ relation marker.
-		// A task naming itself as parent is neither its own parent nor its own
-		// subtask.
-		$byUid = [];
-		$childrenByParent = [];
-		foreach ($tasks as $task) {
-			$byUid[$task->id] = $task;
-			if ($task->parentUid !== null && $task->parentUid !== $task->id) {
-				$childrenByParent[$task->parentUid][] = $task->title;
-			}
-		}
-		$out = [];
-		foreach ($tasks as $task) {
-			$parentTitle = $task->parentUid !== null && $task->parentUid !== $task->id ? ($byUid[$task->parentUid]->title ?? null) : null;
-			$out[] = $task->withRelationships($parentTitle, $childrenByParent[$task->id] ?? []);
-		}
-		return $out;
+		return TaskLimits::resolve($tasks);
 	}
 
 	/**

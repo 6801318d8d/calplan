@@ -36,6 +36,7 @@ A task's own settings live on its `VTODO`:
 | Property | Meaning |
 |---|---|
 | `ESTIMATED-DURATION` | Block length (draft-ietf-calext-ical-tasks), set by the sidebar Duration field |
+| `X-APPLE-SORT-ORDER` | Tasks' manual order, the order of a tree's subtasks |
 
 No database tables are required.
 
@@ -95,8 +96,11 @@ the new one.
 
 The listener skips CalPlan's own writes and blocks, users the app is not enabled
 for, users whose last reconcile had nothing to plan (unless the task carries
-`calplan`), the birthday calendar, and a created, deleted or restored event that
-is transparent or outside the planning window.
+`calplan`), users whose client holds the re-plans back (`POST
+/reconcile/hold`, used by a parent's Auto-schedule switch before it writes
+the whole subtree and asks for one re-plan), the birthday calendar, and a
+created, deleted or restored event that is transparent or outside the planning
+window.
 
 A run that would rewrite the very task a client is saving (a paused task
 restarted from another client) leaves that to the next review run, so the
@@ -111,6 +115,7 @@ changed nothing are not recorded in the ten diagnostics entries.
 ```text
 POST /ocs/v2.php/apps/calplan/api/v1/reconcile
 GET  /ocs/v2.php/apps/calplan/api/v1/reconcile/status
+POST /ocs/v2.php/apps/calplan/api/v1/reconcile/hold
 ```
 
 Runs of one user never overlap (an exclusive lock through Nextcloud's locking
@@ -149,11 +154,17 @@ grid is rounded up to it), in the user's days (all times are converted to the
 user's timezone first); block lengths use elapsed time, so DST changes do not
 stretch them.
 
-### 1. Eligibility
+### 1. Eligibility and task trees
 
 A task is eligible when it is selected for auto-scheduling and is not complete,
 cancelled, or at 100 percent completion. Paused review tasks are omitted until
-the user explicitly enables Auto-schedule again.
+the user explicitly enables Auto-schedule again. A task with a subtask still to
+schedule or awaiting review is a container and gets no block itself.
+
+`TaskLimits::resolve` attaches what each task inherits along its `RELATED-TO`
+parent chain within the calendar: the top task's due date, start and priority,
+the tree position, and the parent path. A parent link closing a cycle is
+ignored; a completed ancestor ends the chain.
 
 ### 2. Busy subtraction
 
@@ -162,16 +173,18 @@ intervals. Event buffers expand ordinary busy intervals before subtraction.
 
 ### 3. Ranking
 
-Tasks are sorted by:
+A task tree is one unit, ranked by its top task; a task without parent is a unit
+of its own. Units are sorted by:
 
 1. urgency tier: missed `DUE`, missed `DTSTART`, other;
 2. descending deadline/priority score;
 3. the exact deadline; and
-4. ascending duration as a shortest-processing-time tiebreaker.
+4. ascending total duration as a shortest-processing-time tiebreaker.
 
 The score is `priority_weight / (calendar_days_until_due + 1)`. Priority 1 weighs
 5, falling to 0.2 for 9; no priority weighs like medium (5). An undated task is
-ranked as if due ten years ahead.
+ranked as if due ten years ahead. Within a unit, tasks follow the tree's
+depth-first order.
 
 ### 4. Placement
 
@@ -184,7 +197,8 @@ planned again from now, and only its time before the event counts as spent.
 
 Each task then takes the earliest free interval that satisfies:
 
-- it does not start in the past or before `DTSTART`;
+- it does not start in the past, before its own or its top task's `DTSTART`, or
+  before the end of the blocks already placed for its tree;
 - it fits its duration;
 - it finishes by a future `DUE`;
 - it stays within the daily minute and block limits;
@@ -271,7 +285,8 @@ The live event summary is intentionally short:
 
 The description contains a structured `---Task---` section and an optional
 `---Notes---` section. Depending on available data it includes title, progress,
-priority, overdue state, parent/child titles, task URL, and `👣 First step:`.
+priority, overdue state, subtask titles, the parent path up to the top task,
+task URL, and `👣 First step:`.
 
 ## Configuration and storage
 
@@ -284,8 +299,8 @@ Per-user state is stored with Nextcloud's standard `OCP\IConfig` user values:
 - ignored calendars and event-title rules;
 - history consent and retention;
 - the latest ten aggregate reconcile diagnostics;
-- tasks CalPlan rewrote in the last hour (for the Tasks page to reload) and
-  today's spent block time.
+- tasks CalPlan rewrote in the last hour (for the Tasks page to reload),
+  today's spent block time, and a re-plan hold.
 
 Optional scheduling history is stored as monthly JSONL files in per-user appdata.
 Task UIDs are converted to salted HMAC keys. Plaintext titles, notes, locations,
@@ -320,6 +335,7 @@ Nextcloud app-management icon discovery uses `img/app.svg` and
 |---|---|
 | `lib/Service/ReconcileService.php` | Per-user orchestration, lock, review, metrics, apply |
 | `lib/Service/CalendarRepository.php` | CalDAV reads and writes |
+| `lib/Service/TaskLimits.php` | Task trees: relationships, inheritance, containers |
 | `lib/Service/SchedulerService.php` | Ranking, constraints, placement, reasons |
 | `lib/Service/PlanState.php` | Free pool and daily usage of one scheduling pass |
 | `lib/Service/FreeSlotsService.php` | Working windows and busy subtraction |
@@ -336,9 +352,9 @@ Nextcloud app-management icon discovery uses `img/app.svg` and
 ## Testing and packaging
 
 The PHPUnit suite covers scheduling, reconciliation, free-slot subtraction,
-iCalendar parsing/serialization, exclusions, review behavior, history, and scale
-fixtures. Browser and live CalDAV tests run against a disposable Nextcloud 34
-instance.
+iCalendar parsing/serialization, task trees, exclusions, review behavior,
+history, and scale fixtures. Browser and live CalDAV tests run against a
+disposable Nextcloud 34 instance.
 
 The App Store archive is built from a clean Git export. It excludes tests,
 Composer development metadata, screenshots, the public roadmap, and this

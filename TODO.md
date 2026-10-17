@@ -34,8 +34,8 @@ feature scope.
   per user at the end of the save request (DeferredReplans), outside the
   CalDAV write transaction, so blocks move the moment an event is saved, from
   any client. The listener skips CalPlan's own blocks, ignored calendars,
-  transparent or out-of-window events and users with nothing to plan
-  (`plan_active`); a re-plan takes ~0.1–0.3 s for one user.
+  transparent or out-of-window events, users with nothing to plan
+  (`plan_active`) and held re-plans; a re-plan takes ~0.1–0.3 s for one user.
   Next at scale: a queue that also merges re-plans of separate requests (one
   PUT per event of a web import) without blocking the save request.
 - **Scale profiling** — pure scheduler fixtures now cover 60/250 tasks and

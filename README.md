@@ -97,19 +97,31 @@ Below **Auto-schedule**, CalPlan adds:
 - **Duration** — the block length, saved as the task's `ESTIMATED-DURATION`
   (draft-ietf-calext-ical-tasks). Empty means your default duration.
 
+Turning **Auto-schedule** on or off for a task with subtasks does the same for
+all of them. While some subtasks (at any depth) are still to be scheduled or
+awaiting review, they get the blocks and the parent gets none; once all are
+done, or none is flagged, the parent is planned like any task. A completed
+parent no longer rules the subtasks left open under it.
+
 ## How scheduling works
 
 CalPlan plans ahead on a 15-minute grid, within a planning window of 14 days
 by default (7–90, **Personal settings → CalPlan → Planning window**).
 
+- A task tree is planned as a whole: its top task's due date, start and
+  priority rule all its subtasks, which are placed one after another in the
+  tree's depth-first order, siblings in Tasks' manual order ("Sort by:
+  Manually", `X-APPLE-SORT-ORDER`, else creation time). Subtasks' own due dates
+  and priorities are ignored for scheduling.
 - Busy time comes from all of your active calendars, including calendars
   shared with you, subscriptions and federated calendars.
 - `TRANSPARENT` events do not block time.
 - Ignored calendars are not read or changed at all.
 - Selected ordinary event titles can be ignored as busy time.
-- A task is never placed before its start date.
-- A future due date is a hard latest finish. If the task cannot fit before it,
-  the task is left unscheduled.
+- A task is never placed before its start date, nor a subtask before its top
+  task's.
+- A future due date (a subtask's: its top task's) is a hard latest finish. If
+  the task cannot fit before it, the task is left unscheduled.
 - An overdue task, or a task without a due date, may roll forward and is tried in
   the earliest available slot.
 - A start time outside working hours, on a working day, may open time for that

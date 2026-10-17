@@ -142,6 +142,22 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertArrayNotHasKey('UNFLAG', $placed);
 	}
 
+	public function testParentTaskIsNotPlacedButItsSubtasksAre(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$parent = new Task(id: 'PARENT', title: 'Course', estimatedMinutes: 30, autoSchedule: true, hasChildren: true, childTitles: ['Lesson'], hasScheduledSubtasks: true);
+		$child = new Task(id: 'CHILD', title: 'Lesson', estimatedMinutes: 60, autoSchedule: true, parentUid: 'PARENT', parentTitle: 'Course');
+		$placed = $this->scheduler->schedule([$parent, $child], $this->allWeek(), [], $now);
+		$this->assertArrayNotHasKey('PARENT', $placed);
+		$this->assertArrayHasKey('CHILD', $placed);
+	}
+
+	public function testParentWhoseSubtasksAreAllDoneIsPlannedItself(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$parent = new Task(id: 'PARENT', title: 'Course', estimatedMinutes: 30, autoSchedule: true, hasChildren: true, childTitles: ['Lesson'], hasScheduledSubtasks: false);
+		$placed = $this->scheduler->schedule([$parent], $this->allWeek(), [], $now);
+		$this->assertSame('2026-08-19 09:00:00', $placed['PARENT']->start->format('Y-m-d H:i:s'));
+	}
+
 	public function testTasksWithTheSameEveningStartDoNotOverlap(): void {
 		$now = $this->utc('2026-08-19 12:00:00');
 		$a = new Task(id: 'A', title: 'A', start: $this->utc('2026-08-19 18:00:00'), estimatedMinutes: 60, autoSchedule: true);
@@ -185,6 +201,74 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 	private function blocksOf(array $outcomes, string $id): array {
 		$slot = $outcomes[$id]->slot;
 		return $slot !== null ? [$slot->start->format('m-d H:i') . '-' . $slot->end->format('H:i')] : [];
+	}
+
+	/** Day 1 has only a 30-minute opening (09:00-09:30); A comes before B (by due date alone, by sequence in a tree). */
+	private function sequenceCase(array $ancestors): array {
+		$now = $this->utc('2026-08-19 08:00:00');
+		$busy = [new BusyBlock($this->utc('2026-08-19 09:30:00'), $this->utc('2026-08-19 17:00:00'))];
+		$a = new Task(id: 'A', title: 'A', due: $this->utc('2026-08-22 17:00:00'), estimatedMinutes: 60, autoSchedule: true, ancestors: $ancestors, sequence: [0]);
+		$b = new Task(id: 'B', title: 'B', due: $this->utc('2026-08-23 17:00:00'), estimatedMinutes: 30, autoSchedule: true, ancestors: $ancestors, sequence: [1]);
+		return $this->scheduler->scheduleDetailed([$b, $a], $this->allWeek(), $busy, $now);
+	}
+
+	public function testSubtasksOfAParentArePlacedInSequence(): void {
+		$outcomes = $this->sequenceCase(['COURSE']);
+		$this->assertSame(['08-20 09:00-10:00'], $this->blocksOf($outcomes, 'A'));
+		// B fits the 30-minute opening on day 1, but must not come before A.
+		$this->assertSame(['08-20 10:00-10:30'], $this->blocksOf($outcomes, 'B'));
+	}
+
+	public function testTasksWithoutACommonParentStillFillEarlierGaps(): void {
+		$outcomes = $this->sequenceCase([]);
+		$this->assertSame(['08-20 09:00-10:00'], $this->blocksOf($outcomes, 'A'));
+		$this->assertSame(['08-19 09:00-09:30'], $this->blocksOf($outcomes, 'B'));
+	}
+
+	public function testSubtaskOrderFollowsTheTreeNotTheirOwnDueDates(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		// SECOND is due earlier, but FIRST comes first in the tree.
+		$first = new Task(id: 'FIRST', title: 'First', due: $this->utc('2026-08-30 12:00:00'), estimatedMinutes: 90, autoSchedule: true, ancestors: ['P'], sequence: [0]);
+		$second = new Task(id: 'SECOND', title: 'Second', due: $this->utc('2026-08-19 12:00:00'), estimatedMinutes: 30, autoSchedule: true, ancestors: ['P'], sequence: [1]);
+		$outcomes = $this->scheduler->scheduleDetailed([$second, $first], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-10:30'], $this->blocksOf($outcomes, 'FIRST'));
+		$this->assertSame(['08-19 10:30-11:00'], $this->blocksOf($outcomes, 'SECOND'));
+	}
+
+	public function testNestedSubtasksFollowTheDepthFirstOrder(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		// Module 1 lesson 2, module 2 lesson 1, module 1 lesson 1: placed as 1.1, 1.2, 2.1.
+		$tasks = [
+			new Task(id: 'M1L2', title: 'M1L2', estimatedMinutes: 30, autoSchedule: true, ancestors: ['M1', 'C'], sequence: [0, 1]),
+			new Task(id: 'M2L1', title: 'M2L1', estimatedMinutes: 30, autoSchedule: true, ancestors: ['M2', 'C'], sequence: [1, 0]),
+			new Task(id: 'M1L1', title: 'M1L1', estimatedMinutes: 30, autoSchedule: true, ancestors: ['M1', 'C'], sequence: [0, 0]),
+		];
+		$outcomes = $this->scheduler->scheduleDetailed($tasks, $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-09:30'], $this->blocksOf($outcomes, 'M1L1'));
+		$this->assertSame(['08-19 09:30-10:00'], $this->blocksOf($outcomes, 'M1L2'));
+		$this->assertSame(['08-19 10:00-10:30'], $this->blocksOf($outcomes, 'M2L1'));
+	}
+
+	public function testSubtaskPriorityIsIgnoredInFavourOfTheTopTasks(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		// A lone task with no priority, and a tree whose top task has none either:
+		// its subtask's own top priority must not lift the tree ahead.
+		$lone = new Task(id: 'LONE', title: 'Lone', due: $this->utc('2026-08-25 12:00:00'), estimatedMinutes: 30, autoSchedule: true);
+		$sub = new Task(id: 'SUB', title: 'Sub', priority: 1, estimatedMinutes: 30, autoSchedule: true,
+			ancestors: ['C'], rootDue: $this->utc('2026-08-26 12:00:00'), rootPriority: 0, sequence: [0]);
+		$outcomes = $this->scheduler->scheduleDetailed([$sub, $lone], $this->allWeek(), [], $now);
+		$this->assertSame(['08-19 09:00-09:30'], $this->blocksOf($outcomes, 'LONE'));
+		$this->assertSame(['08-19 09:30-10:00'], $this->blocksOf($outcomes, 'SUB'));
+	}
+
+	public function testTheTopTasksDueDateIsTheDeadlineOfItsSubtasks(): void {
+		$now = $this->utc('2026-08-19 08:00:00');
+		// Its own due date is far away, but the tree must be done by 10:00 today.
+		$task = new Task(id: 'L', title: 'L', due: $this->utc('2026-08-30 12:00:00'), estimatedMinutes: 120, autoSchedule: true,
+			ancestors: ['C'], rootDue: $this->utc('2026-08-19 10:00:00'), sequence: [0]);
+		$outcomes = $this->scheduler->scheduleDetailed([$task], $this->allWeek(), [], $now);
+		$this->assertNull($outcomes['L']->slot);
+		$this->assertSame('no_fit_before_due', $outcomes['L']->reason);
 	}
 
 	public function testNoDueDateIsStillPlaced(): void {
@@ -396,6 +480,39 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 		$this->assertSame('09:00', $placed['HIGH']->start->format('H:i'));
 		$this->assertSame('09:30', $placed['MED']->start->format('H:i'));
 		$this->assertSame('10:00', $placed['LOW']->start->format('H:i'));
+	}
+
+	public function testATreeIsRankedByItsTopTaskNotItsFirstLesson(): void {
+		$now = $this->utc('2026-10-20 08:00:00');
+		$lesson = fn (string $id, int $pos, ?\DateTimeImmutable $start) => new Task(id: $id, title: $id, start: $start, estimatedMinutes: 60, autoSchedule: true,
+			ancestors: ['COURSE'], rootDue: $this->utc('2026-11-20 12:00:00'), sequence: [$pos]);
+		$urgent = new Task(id: 'URGENT', title: 'Urgent', priority: 1, due: $this->utc('2026-10-20 12:00:00'), estimatedMinutes: 60, autoSchedule: true);
+		// Lesson 1's own start has passed; the course's has not.
+		$outcomes = $this->scheduler->scheduleDetailed([$lesson('L1', 0, $this->utc('2026-10-19 09:00:00')), $lesson('L2', 1, null), $urgent], $this->allWeek(), [], $now);
+		$this->assertSame(['10-20 09:00-10:00'], $this->blocksOf($outcomes, 'URGENT'));
+		$this->assertSame(['10-20 10:00-11:00'], $this->blocksOf($outcomes, 'L1'));
+		$this->assertSame(['10-20 11:00-12:00'], $this->blocksOf($outcomes, 'L2'));
+	}
+
+	public function testSubtasksWaitForTheirTopTasksStart(): void {
+		$now = $this->utc('2026-10-20 08:00:00');
+		// The course starts on the 22nd at 10:00: its lessons, without a start of their own, wait for it.
+		$lesson = fn (string $id, int $pos, ?\DateTimeImmutable $start = null) => new Task(id: $id, title: $id, start: $start, estimatedMinutes: 60, autoSchedule: true,
+			ancestors: ['COURSE'], sequence: [$pos], rootStart: $this->utc('2026-10-22 10:00:00'));
+		$outcomes = $this->scheduler->scheduleDetailed([$lesson('L1', 0), $lesson('L2', 1), $lesson('L3', 2, $this->utc('2026-10-23 14:00:00'))], $this->allWeek(), [], $now);
+		$this->assertSame(['10-22 10:00-11:00'], $this->blocksOf($outcomes, 'L1'));
+		$this->assertSame(['10-22 11:00-12:00'], $this->blocksOf($outcomes, 'L2'));
+		// A later start of its own still counts.
+		$this->assertSame(['10-23 14:00-15:00'], $this->blocksOf($outcomes, 'L3'));
+	}
+
+	public function testASubtaskWhoseTopTaskStartsAfterTheWindowSaysSo(): void {
+		$now = $this->utc('2026-10-20 08:00:00');
+		$lesson = new Task(id: 'L', title: 'L', estimatedMinutes: 60, autoSchedule: true,
+			ancestors: ['COURSE'], sequence: [0], rootStart: $this->utc('2026-12-01 09:00:00'));
+		$outcomes = $this->scheduler->scheduleDetailed([$lesson], $this->allWeek(), [], $now, horizonDays: 14);
+		$this->assertNull($outcomes['L']->slot);
+		$this->assertSame('starts_after_horizon', $outcomes['L']->reason);
 	}
 
 	public function testDaysUntilDueCountsTheUsersCalendarDays(): void {

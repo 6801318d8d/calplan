@@ -231,6 +231,25 @@
 		return !!calendar && (!!calendar.readOnly || (!!calendar.isSharedWithMe && task.class !== 'PUBLIC'))
 	}
 
+	/** Every subtask below *task*, depth first (Tasks keeps them in task.subTasks, keyed by UID); cycle-safe. */
+	function descendants(task) {
+		var out = []
+		var seen = {}
+		if (task && task.uid) seen[task.uid] = true
+		function walk(node) {
+			var subs = node && node.subTasks ? node.subTasks : {}
+			for (var key in subs) {
+				var sub = subs[key]
+				if (!Object.prototype.hasOwnProperty.call(subs, key) || !sub || seen[sub.uid]) continue
+				seen[sub.uid] = true
+				out.push(sub)
+				walk(sub)
+			}
+		}
+		walk(task)
+		return out
+	}
+
 	/**
 	 * Call *cb* once Tasks has finished the CalDAV PUT for *task*: Tasks'
 	 * setTags/updateTask do not return the write, and updateTask only sets
@@ -255,6 +274,19 @@
 			setTimeout(tick, 100)
 		}
 		tick()
+	}
+
+	/** Call *cb* once every task in *tasks* has finished its write (they run in parallel); false if one failed. */
+	function whenTasksWritten(tasks, cb) {
+		var pending = tasks.length
+		var ok = true
+		if (pending === 0) { cb(true); return }
+		tasks.forEach(function (task) {
+			whenTaskWritten(task, function (written) {
+				ok = ok && written
+				if (--pending === 0) cb(ok)
+			})
+		})
 	}
 
 	// --- 1. Task-list icon ------------------------------------------------
@@ -613,6 +645,7 @@
 			'<div class="calplan-help-dialog" role="dialog" aria-modal="true" aria-labelledby="calplanHelpTitle">' +
 			'  <div class="calplan-help-header"><h2 id="calplanHelpTitle">' + escapeHtml(t('CalPlan help')) + '</h2><button type="button" class="calplan-help-close" aria-label="' + escapeHtml(t('Close')) + '">×</button></div>' +
 			'  <p>' + t('<strong>CalPlan finds time for your Nextcloud tasks.</strong> Auto-schedule adds the standard <code>calplan</code> category and creates a derived locked event in the same calendar.') + '</p>' +
+			'  <p>' + t('On a task with subtasks, the switch turns Auto-schedule on or off for all its subtasks. While some of them are still to be scheduled or awaiting review, they get the blocks, not the parent; once they are all done, or none has Auto-schedule on, the parent is planned like any task.') + '</p>' +
 			'  <h3>' + escapeHtml(t('What Reconcile does')) + '</h3>' +
 			'  <p>' + t('Reconcile rereads your flagged tasks and busy calendar events, recomputes the current plan, writes new or changed task blocks, and removes blocks for completed, paused, or no-longer-fitting tasks. A block that has already started stays where it is.') + '</p>' +
 			'  <p>' + t('After a block ends and its pacing grace period passes, an incomplete task receives the filterable <code>calplan-review</code> tag — CalPlan’s <strong>“Is complete?”</strong> review marker. Depending on your setting, CalPlan either tries another time or removes Auto-schedule and pauses.') + '</p>' +
@@ -683,15 +716,52 @@
 		return tags
 	}
 
-	/** Add/remove the flag via Tasks' own Vuex actions (reactive + CalDAV-synced). */
+	function sameTags(a, b) {
+		if (a.length !== b.length) return false
+		for (var i = 0; i < a.length; i++) {
+			if (String(a[i]) !== String(b[i])) return false
+		}
+		return true
+	}
+
+	/**
+	 * Add/remove the flag via Tasks' own Vuex actions (reactive + CalDAV-synced).
+	 * A parent's switch applies to its whole subtree: while subtasks are to be
+	 * scheduled the parent is a container (SchedulerService places them, not
+	 * it), so they carry the flag that actually schedules them. Completed and
+	 * read-only subtasks are left alone. For a subtree the per-write re-plans
+	 * are held back, the subtasks are written before the parent, and one
+	 * re-plan runs once every write has settled.
+	 */
 	function toggleFlag(task, on) {
 		var store = vuexStore()
 		if (!store || !task) { warn('toggleFlag: no store/task'); return }
-		store.dispatch('setTags', { task: task, tags: flaggedTags(task, on) })
-		// The PUT re-plans on the server; then refresh the status.
-		whenTaskWritten(task, function (ok) {
-			if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
-			loadReconcileStatus().catch(function () {})
+		var subtree = descendants(task).filter(function (sub) {
+			return !(on && sub.completed) && !isReadOnly(sub) && !sameTags(flaggedTags(sub, on), Array.isArray(sub.tags) ? sub.tags : [])
+		})
+		if (subtree.length === 0) {
+			store.dispatch('setTags', { task: task, tags: flaggedTags(task, on) })
+			// The PUT re-plans on the server; then refresh the status.
+			whenTaskWritten(task, function (ok) {
+				if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
+				loadReconcileStatus().catch(function () {})
+			})
+			return
+		}
+		var targets = subtree.reverse().concat([task]) // deepest first, the parent last
+		api('POST', '/reconcile/hold').catch(function () {}).then(function () {
+			targets.forEach(function (target) {
+				store.dispatch('setTags', { task: target, tags: flaggedTags(target, on) })
+			})
+			whenTasksWritten(targets, function (ok) {
+				triggerReconcile().then(function () {
+					notify(on
+						? n('Auto-schedule on for {count} subtask', 'Auto-schedule on for {count} subtasks', subtree.length)
+						: n('Auto-schedule off for {count} subtask', 'Auto-schedule off for {count} subtasks', subtree.length))
+					refreshCalendarApp()
+				}).catch(function () {})
+				if (!ok) notify(t('CalPlan: some tasks could not be saved; reload them in Tasks and try again.'), true)
+			})
 		})
 	}
 

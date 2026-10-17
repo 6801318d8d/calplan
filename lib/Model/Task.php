@@ -29,17 +29,51 @@ class Task {
 		public readonly ?string $calendarUri = null,
 		public readonly ?string $principalUri = null,
 		public readonly ?string $parentUid = null,
-		/** Whether another task of the calendar is a subtask of this one (CalendarRepository::getTasks). */
+		/** Whether another task of the calendar is a subtask of this one (TaskLimits::resolve). */
 		public readonly bool $hasChildren = false,
-		/** The parent's title (CalendarRepository::getTasks). */
+		/** The parent's title (TaskLimits::resolve). */
 		public readonly ?string $parentTitle = null,
 		/** @var string[] */
 		public readonly array $childTitles = [],
 		public readonly ?string $objectUri = null,
 		/** @var string[] */
 		public readonly array $categories = [],
+		/**
+		 * UIDs of the parent chain, nearest first; resolved in TaskLimits::resolve.
+		 * Tasks sharing an ancestor are placed in sequence (SchedulerService).
+		 * @var list<string>
+		 */
+		public readonly array $ancestors = [],
+		/**
+		 * Position among siblings, as in Tasks' manual order: X-APPLE-SORT-ORDER,
+		 * or (like Tasks) seconds from 2001-01-01 to CREATED when unset.
+		 */
+		public readonly int $sortOrder = 0,
+		/** For a subtask: the top ancestor's due date and priority, which rule the whole tree. */
+		public readonly ?\DateTimeImmutable $rootDue = null,
+		public readonly int $rootPriority = 0,
+		/**
+		 * Sibling positions from the top ancestor down to this task: the tree's
+		 * depth-first order, in which its subtasks are placed one after another.
+		 * @var list<int>
+		 */
+		public readonly array $sequence = [],
+		/**
+		 * Titles of the parent chain, nearest first (the block's "Parent task" path).
+		 * @var list<string>
+		 */
+		public readonly array $ancestorTitles = [],
+		/**
+		 * Whether a subtask, at any depth, is itself still to be scheduled
+		 * (Auto-schedule on or awaiting review, not done): such a task is a
+		 * container whose subtasks get the blocks; otherwise (all done, or none
+		 * flagged) it is planned itself.
+		 */
+		public readonly bool $hasScheduledSubtasks = false,
 		/** DTSTART is an all-day DATE: "not before that day", never a time window of its own. */
 		public readonly bool $startAllDay = false,
+		/** The top ancestor's DTSTART, which ranks the whole tree (like rootDue). */
+		public readonly ?\DateTimeImmutable $rootStart = null,
 		/** The VTODO's CLASS (PUBLIC, PRIVATE, CONFIDENTIAL), mirrored onto its blocks. */
 		public readonly ?string $classification = null,
 	) {
@@ -53,6 +87,8 @@ class Task {
 		return $this->with([
 			'due' => $this->due?->setTimezone($tz),
 			'start' => $this->start?->setTimezone($tz),
+			'rootDue' => $this->rootDue?->setTimezone($tz),
+			'rootStart' => $this->rootStart?->setTimezone($tz),
 		]);
 	}
 
@@ -61,13 +97,43 @@ class Task {
 		return $this->with(['autoSchedule' => true]);
 	}
 
+	/** The deadline the scheduler honours: a subtask's tree is ruled by its top ancestor's due date. */
+	public function schedulingDue(): ?\DateTimeImmutable {
+		return $this->ancestors !== [] ? $this->rootDue : $this->due;
+	}
+
+	/** The start that ranks the task: a subtask's tree is ranked by its top ancestor's start. */
+	public function schedulingStart(): ?\DateTimeImmutable {
+		return $this->ancestors !== [] ? $this->rootStart : $this->start;
+	}
+
+	/**
+	 * The task is never placed before this: the later of its own DTSTART and,
+	 * for a subtask, its top ancestor's (a course starting in November keeps
+	 * all its lessons there).
+	 */
+	public function scheduledFrom(): ?\DateTimeImmutable {
+		$root = $this->ancestors !== [] ? $this->rootStart : null;
+		return $root !== null && ($this->start === null || $root > $this->start) ? $root : $this->start;
+	}
+
+	/** The priority weight the scheduler ranks by: a subtask's tree by its top ancestor's priority. */
+	public function schedulingWeight(): float {
+		return Defaults::priorityWeight($this->ancestors !== [] ? $this->rootPriority : $this->priority);
+	}
+
+	/** UID of the top ancestor, or null for a task without parent. */
+	public function rootUid(): ?string {
+		return $this->ancestors !== [] ? $this->ancestors[count($this->ancestors) - 1] : null;
+	}
+
 	/** A copy with the given constructor arguments replaced (by name). */
 	private function with(array $changes): self {
 		return new self(...array_merge(get_object_vars($this), $changes));
 	}
 
 	/**
-	 * A copy with its relationships within the calendar (CalendarRepository::getTasks):
+	 * A copy with its relationships within the calendar (TaskLimits::resolve):
 	 * the parent's title and the subtasks' titles.
 	 *
 	 * @param string[] $childTitles
@@ -77,6 +143,25 @@ class Task {
 			'hasChildren' => $childTitles !== [],
 			'parentTitle' => $parentTitle,
 			'childTitles' => array_values($childTitles),
+		]);
+	}
+
+	/**
+	 * A copy with what it inherits along the parent chain.
+	 *
+	 * @param list<string> $ancestors
+	 * @param list<int> $sequence
+	 * @param list<string> $ancestorTitles
+	 */
+	public function withInherited(array $ancestors = [], ?\DateTimeImmutable $rootDue = null, int $rootPriority = 0, array $sequence = [], array $ancestorTitles = [], bool $hasScheduledSubtasks = false, ?\DateTimeImmutable $rootStart = null): self {
+		return $this->with([
+			'ancestors' => array_values($ancestors),
+			'rootDue' => $rootDue,
+			'rootPriority' => $rootPriority,
+			'sequence' => array_values($sequence),
+			'ancestorTitles' => array_values($ancestorTitles),
+			'hasScheduledSubtasks' => $hasScheduledSubtasks,
+			'rootStart' => $rootStart,
 		]);
 	}
 
@@ -151,9 +236,5 @@ class Task {
 		return $s === 'COMPLETED'
 			|| $s === 'CANCELLED'
 			|| ($this->percentComplete !== null && $this->percentComplete >= 100);
-	}
-
-	public function weight(): float {
-		return Defaults::priorityWeight($this->priority);
 	}
 }

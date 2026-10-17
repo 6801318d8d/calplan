@@ -48,6 +48,7 @@ class ConfigService {
 	public const KEY_RESTARTED_TASKS = 'restarted_tasks';
 	public const KEY_SPENT_TODAY = 'spent_today';
 	public const KEY_REWRITTEN_TASKS = 'rewritten_tasks';
+	public const KEY_REPLAN_HOLD = 'replan_hold_until';
 	/** Recovery time between tasks and buffer around events: 0–120 minutes in 15-minute steps. */
 	public const GAP_CHOICES = [0, 15, 30, 45, 60, 75, 90, 105, 120];
 	/** How often expired blocks are reviewed (0 = off: tag for review and stop scheduling). */
@@ -59,6 +60,8 @@ class ConfigService {
 	public const DAILY_TASK_COUNT_MAX = 100;
 	public const DEFAULT_DURATION_MIN = 15;
 	public const DEFAULT_DURATION_MAX = 480;
+	/** Longest a client may hold back the per-write re-plans (see holdReplans). */
+	public const REPLAN_HOLD_SECONDS = 120;
 	/** How long the Tasks page is told about a task CalPlan rewrote, so it can reload it. */
 	private const REWRITTEN_TTL_SECONDS = 3600;
 
@@ -401,6 +404,23 @@ class ConfigService {
 			$known[(string)$uid] = ['uri' => $uri, 'at' => $now];
 		}
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_REWRITTEN_TASKS, (string)json_encode((object)$known, JSON_UNESCAPED_SLASHES));
+	}
+
+	/**
+	 * Hold back the re-plan each task write triggers, for at most
+	 * REPLAN_HOLD_SECONDS: a client writing many tasks at once (a parent's
+	 * Auto-schedule switch) then asks for a single re-plan at the end.
+	 */
+	public function holdReplans(string $userId, int $now): void {
+		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_REPLAN_HOLD, (string)($now + self::REPLAN_HOLD_SECONDS));
+	}
+
+	public function releaseReplans(string $userId): void {
+		$this->config->deleteUserValue($userId, Application::APP_ID, self::KEY_REPLAN_HOLD);
+	}
+
+	public function areReplansHeld(string $userId, int $now): bool {
+		return (int)$this->config->getUserValue($userId, Application::APP_ID, self::KEY_REPLAN_HOLD, '0') > $now;
 	}
 
 	public function reviewGraceMinutes(string $userId): int {
