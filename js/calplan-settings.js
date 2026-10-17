@@ -52,6 +52,7 @@
 		var dailyCap = document.getElementById('calplan-daily-cap')
 		var dailyTaskCount = document.getElementById('calplan-daily-task-count')
 		var defaultDuration = document.getElementById('calplan-default-duration')
+		var planningDays = document.getElementById('calplan-planning-days')
 		var taskGap = document.getElementById('calplan-task-gap')
 		var eventBuffer = document.getElementById('calplan-event-buffer')
 		var autoReschedule = document.getElementById('calplan-auto-reschedule')
@@ -84,6 +85,7 @@
 		dailyCap.value = root.dataset.dailyCap || '300'
 		dailyTaskCount.value = root.dataset.dailyTaskCount || '0'
 		defaultDuration.value = root.dataset.defaultDuration || '30'
+		planningDays.value = root.dataset.planningDays || '14'
 		selectValue(taskGap, root.dataset.taskGap || '0')
 		selectValue(eventBuffer, root.dataset.eventBuffer || '0')
 		autoReschedule.value = root.dataset.autoReschedule || '15'
@@ -154,6 +156,7 @@
 					eventBufferMinutes: +eventBuffer.value,
 					pacePreset: pace.value,
 					autoRescheduleMinutes: +autoReschedule.value,
+					planningDays: numberValue(planningDays, labelOf(planningDays)),
 				}
 			} catch (error) {
 				status.textContent = error.message
@@ -163,7 +166,7 @@
 			status.textContent = t('Saving…')
 			apiRequest('/settings/scheduling', 'PUT', body).then(function () {
 				markSaved(status)
-				status.textContent = t('Saved')
+				return replanAfterSave(status)
 			}).catch(function (error) {
 				status.textContent = t('Could not save: {error}', { error: error.message })
 			}).then(function () {
@@ -183,11 +186,79 @@
 				eventTitleMatchMode: titleMatchMode.value,
 			}).then(function () {
 				markSaved(exclusionsStatus)
-				exclusionsStatus.textContent = t('Saved. Run Reconcile to apply the new exclusions.')
+				return replanAfterSave(exclusionsStatus)
 			}).catch(function (error) {
 				exclusionsStatus.textContent = t('Could not save: {error}', { error: error.message })
 			}).then(function () { saveExclusions.disabled = false })
 		})
+
+		var workingDays = Array.from(root.querySelectorAll('.calplan-working-day'))
+		var copyWorkingHours = document.getElementById('calplan-copy-working-hours')
+		var saveWorkingHours = document.getElementById('calplan-save-working-hours')
+		var workingHoursStatus = document.getElementById('calplan-working-hours-status')
+		function dayEnabled(row) { return row.querySelector('.calplan-wh-enabled').checked }
+		function syncWorkingDay(row) {
+			var on = dayEnabled(row)
+			row.classList.toggle('is-off', !on)
+			row.querySelector('.calplan-wh-start').disabled = !on
+			row.querySelector('.calplan-wh-end').disabled = !on
+		}
+		workingDays.forEach(function (row) {
+			syncWorkingDay(row)
+			row.querySelector('.calplan-wh-enabled').addEventListener('change', function () { syncWorkingDay(row) })
+		})
+		trackChanges(root.querySelector('.calplan-working-hours'), workingHoursStatus)
+		copyWorkingHours.addEventListener('click', function () {
+			var monday = workingDays[0]
+			workingDays.forEach(function (row) {
+				if (row === monday || !dayEnabled(row)) return
+				row.querySelector('.calplan-wh-start').value = monday.querySelector('.calplan-wh-start').value
+				row.querySelector('.calplan-wh-end').value = monday.querySelector('.calplan-wh-end').value
+			})
+			workingHoursStatus.textContent = t('Unsaved changes')
+			workingHoursStatus.classList.add('is-unsaved')
+		})
+		saveWorkingHours.addEventListener('click', function () {
+			var map = {}
+			var error = null
+			workingDays.forEach(function (row) {
+				if (!dayEnabled(row)) return
+				var label = row.querySelector('label').textContent
+				var start = row.querySelector('.calplan-wh-start').value
+				var end = row.querySelector('.calplan-wh-end').value
+				// A time field cannot hold 24:00: an end of 00:00 is midnight.
+				if (end === '00:00') end = '24:00'
+				if (!start || !end) error = error || t('{day}: set both times', { day: label })
+				else if (start >= end) error = error || t('{day}: the end must be after the start', { day: label })
+				map[row.dataset.day] = { start: start, end: end }
+			})
+			if (!error && Object.keys(map).length === 0) error = t('Check at least one day')
+			if (error) { workingHoursStatus.textContent = error; return }
+			saveWorkingHours.disabled = true
+			workingHoursStatus.textContent = t('Saving…')
+			apiRequest('/settings/working-hours', 'PUT', { workingHours: map }).then(function () {
+				var source = document.getElementById('calplan-working-hours-source')
+				if (source) source.remove()
+				markSaved(workingHoursStatus)
+				return replanAfterSave(workingHoursStatus)
+			}).catch(function (e) {
+				workingHoursStatus.textContent = t('Could not save: {error}', { error: e.message })
+			}).then(function () { saveWorkingHours.disabled = false })
+		})
+
+		/** After a settings save, re-plan at once so existing blocks follow the new settings. */
+		function replanAfterSave(statusEl) {
+			statusEl.textContent = t('Saved. Re-planning…')
+			return apiRequest('/reconcile', 'POST').then(function (data) {
+				data = data || {}
+				statusEl.textContent = data.ran === false
+					? t('Saved. Another re-plan is still running; the new settings apply from the next one.')
+					: t('Saved and re-planned: {placed} blocks added or moved, {removed} removed', { placed: data.placed || 0, removed: data.removed || 0 })
+						+ (data.unscheduled ? t(', {count} could not fit', { count: data.unscheduled }) : '') + '.'
+			}, function () {
+				statusEl.textContent = t('Saved. Re-planning failed: use Reconcile CalPlan in Tasks or Calendar.')
+			})
+		}
 
 		function historyRequest(path, method, body) {
 			return apiRequest('/history' + path, method, body)

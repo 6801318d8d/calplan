@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace OCA\AutoSchedule\Settings;
 
 use OCA\AutoSchedule\AppInfo\Application;
+use OCA\AutoSchedule\Model\Defaults;
 use OCA\AutoSchedule\Service\ConfigService;
 use OCA\AutoSchedule\Service\CalendarRepository;
+use OCA\AutoSchedule\Service\WorkingHoursService;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
@@ -61,9 +63,15 @@ class Personal implements ISettings {
 			$this->config->getExclusionSettings($uid),
 			['reconcileDiagnostics' => $this->config->getReconcileDiagnostics($uid)],
 			['calendarOptions' => $calendarOptions],
+			[
+				'workingHours' => WorkingHoursService::toMap($this->config->getWorkingHours($uid)),
+				'workingHoursSource' => $this->config->getWorkingHoursSource($uid),
+			],
 			// The choices and bounds the server accepts, so the form offers exactly those.
 			[
 				'gapChoices' => ConfigService::GAP_CHOICES,
+				'planningDaysMin' => Defaults::MIN_PLANNING_DAYS,
+				'planningDaysMax' => Defaults::MAX_PLANNING_DAYS,
 				'dailyCapMin' => ConfigService::DAILY_CAP_MIN,
 				'dailyCapMax' => ConfigService::DAILY_CAP_MAX,
 				'dailyTaskCountMax' => ConfigService::DAILY_TASK_COUNT_MAX,

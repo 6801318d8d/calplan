@@ -29,3 +29,16 @@
 .calplan-diagnostic-grid dt { font-weight: 600; }
 .calplan-diagnostic-grid dd { margin: 0; }
 .calplan-diagnostic-calendars ul { margin: 8px 0 0 20px; }
+.calplan-working-hours { display: grid; gap: 2px; margin: 16px 0 20px; }
+/* Checkbox, day, then the two times on one line; on a narrow screen the times move under the day and shrink. */
+.calplan-working-day { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; padding: 4px 8px; border-radius: var(--border-radius-element, 6px); }
+.calplan-working-day label { flex: 0 0 7.5em; }
+.calplan-wh-times { display: inline-flex; flex: 0 1 auto; flex-wrap: nowrap; align-items: center; gap: 10px; min-width: 0; }
+.calplan-working-day:hover { background: var(--color-background-hover); }
+.calplan-working-day label { font-weight: 600; }
+/* Wide enough for a 12-hour browser locale ("09:00 AM" plus the clock icon),
+ * and free to grow if a locale needs more. */
+.calplan-working-day input[type="time"] { flex: 0 1 auto; width: auto; min-width: 0; margin: 0; }
+.calplan-working-day.is-off label, .calplan-working-day.is-off span { color: var(--color-text-maxcontrast); }
+.calplan-working-day.is-off input[type="time"] { opacity: 0.5; }
+#calplan-working-hours-status { display: inline-block; margin-inline-start: 12px; }

@@ -17,7 +17,6 @@ declare(strict_types=1);
 namespace OCA\AutoSchedule\Service;
 
 use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Defaults;
 use OCA\AutoSchedule\Model\Reconciliation;
 use OCA\AutoSchedule\Model\Task;
 use OCA\DAV\CalDAV\CalDavBackend;
@@ -128,10 +127,10 @@ class ReconcileService {
 		$calendarSetupMs = self::elapsedMs($phaseStarted);
 
 		// Busy only matters where a slot can be placed. Include one day behind now
-		// for ongoing/overnight events and query through the planning horizon.
+		// for ongoing/overnight events and query through the planning window.
 		// CalendarRepository separately merges every owned slot for stale cleanup.
 		$eventFrom = $now->modify('-1 day');
-		$eventUntil = $now->modify('+' . Defaults::LOOKAHEAD_DAYS . ' days')->setTime(23, 59, 59);
+		$eventUntil = $now->modify('+' . $policy['planningDays'] . ' days')->setTime(23, 59, 59);
 		$phaseStarted = hrtime(true);
 		$eventsByCalendar = [];
 		$allEvents = [];
@@ -259,7 +258,7 @@ class ReconcileService {
 			$working,
 			$allEvents,
 			$now,
-			horizonDays: Defaults::LOOKAHEAD_DAYS,
+			horizonDays: $policy['planningDays'],
 			dailyCap: $policy['dailyCapMinutes'],
 			taskGapMinutes: $policy['taskGapMinutes'],
 			eventBufferMinutes: $policy['eventBufferMinutes'],

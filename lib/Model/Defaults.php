@@ -25,6 +25,9 @@ class Defaults {
 
 	/** Plan at most two weeks ahead. */
 	public const LOOKAHEAD_DAYS = 14;
+	/** Bounds of the personal planning window (Personal settings). */
+	public const MIN_PLANNING_DAYS = 7;
+	public const MAX_PLANNING_DAYS = 90;
 
 	/**
 	 * Tasks with no due date sort after every dated task but still get placed:

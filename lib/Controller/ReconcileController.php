@@ -7,7 +7,8 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * OCS endpoints to run a reconciliation pass for the calling user on demand
- * (the Reconcile button) and to read the latest run's status. Driving
+ * (the Reconcile button and settings saves) and to read the latest run's
+ * status. Driving
  * ReconcileService::reconcileUser() directly in the request is also the path
  * the Playwright E2E uses to exercise the scheduling pipeline end-to-end
  * without waiting for cron.

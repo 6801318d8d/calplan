@@ -44,7 +44,7 @@ No database tables are required.
 ```text
  task create, edit, delete, move ── listener ────────── DeferredReplans (end of request)
  cron (ReconcileJob, every 5 min) ───────────────────────┤
- Reconcile button (OCS) ─────────────────────────────────┤
+ Reconcile button, settings saves (OCS) ─────────────────┤
                                                          ▼
                                    ReconcileService::reconcileUser (per-user lock)
                                                          │
@@ -122,7 +122,7 @@ before it stored.
   the user is planned by its owner's CalPlan, never by the sharee's.
 - Busy time: ordinary events of the user's own and shared calendars, of
   subscriptions and of federated calendars, one day behind now through the end
-  of the 14-day planning horizon. The birthday calendar is skipped (its
+  of the planning window (7–90 days). The birthday calendar is skipped (its
   events are transparent).
 - Every CalPlan-owned event of the user's own calendars, including those
   outside the window, so cleanup still works.
@@ -276,7 +276,8 @@ priority, overdue state, parent/child titles, task URL, and `👣 First step:`.
 Per-user state is stored with Nextcloud's standard `OCP\IConfig` user values:
 
 - working hours (else the user's Nextcloud availability, else 09:00–17:00);
-- pacing, daily limits, duration fallback, task gap and event buffer;
+- pacing, daily limits, duration fallback, task gap, event buffer and planning
+  window;
 - review interval, paused and restarted task UIDs;
 - ignored calendars and event-title rules;
 - history consent and retention;

@@ -99,7 +99,8 @@ Below **Auto-schedule**, CalPlan adds:
 
 ## How scheduling works
 
-CalPlan plans up to 14 days ahead on a 15-minute grid.
+CalPlan plans ahead on a 15-minute grid, within a planning window of 14 days
+by default (7–90, **Personal settings → CalPlan → Planning window**).
 
 - Busy time comes from all of your active calendars, including calendars
   shared with you, subscriptions and federated calendars.
@@ -165,6 +166,8 @@ appear until Calendar syncs or is refreshed.
 
 Open **Personal settings → CalPlan** to configure:
 
+- working hours: one window per weekday, unchecked days get no blocks
+  (saving re-plans existing blocks at once);
 - Compact, Balanced, Relaxed, or Custom pacing;
 - maximum task minutes per day;
 - maximum task blocks per day (`0` means unlimited);
@@ -177,10 +180,9 @@ Open **Personal settings → CalPlan** to configure:
 - optional scheduling-history collection; and
 - recent privacy-safe Reconcile diagnostics.
 
-Working hours come from CalPlan's saved working-hours configuration (set through
-its API), then your Nextcloud availability (**Personal settings → Availability**,
-one window per day from its first to its last slot) when present. Otherwise
-CalPlan defaults to 09:00–17:00 on every day of the week.
+Until you save working hours there, CalPlan uses your Nextcloud availability
+(**Personal settings → Availability**, one window per day from its first to its
+last slot) when set, otherwise 09:00–17:00 on every day of the week.
 
 ## Expired blocks
 

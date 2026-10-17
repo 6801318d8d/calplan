@@ -44,6 +44,7 @@ class ConfigService {
 	public const KEY_IGNORED_EVENT_TITLES = 'ignored_event_titles';
 	public const KEY_EVENT_TITLE_MATCH_MODE = 'event_title_match_mode';
 	public const KEY_PLAN_ACTIVE = 'plan_active';
+	public const KEY_PLANNING_DAYS = 'planning_days';
 	public const KEY_RESTARTED_TASKS = 'restarted_tasks';
 	public const KEY_SPENT_TODAY = 'spent_today';
 	public const KEY_REWRITTEN_TASKS = 'rewritten_tasks';
@@ -161,6 +162,14 @@ class ConfigService {
 		}
 	}
 
+	/** Where getWorkingHours() reads from: 'calplan' (saved in CalPlan settings), 'availability' (Nextcloud's), or 'default'. */
+	public function getWorkingHoursSource(string $userId): string {
+		if ($this->storedWorkingHours($userId) !== null) {
+			return 'calplan';
+		}
+		return $this->availabilityWorkingHours($userId) !== null ? 'availability' : 'default';
+	}
+
 	/** @return array<string, array{start: string, end: string}>|null a valid, non-empty `working_hours` map saved in CalPlan */
 	private function storedWorkingHours(string $userId): ?array {
 		$json = $this->config->getUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, '');
@@ -198,6 +207,11 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, json_encode($map));
 	}
 
+	/** How many days ahead CalPlan plans (the scheduling horizon). */
+	public function getPlanningDays(string $userId): int {
+		return $this->boundedUserInt($userId, self::KEY_PLANNING_DAYS, Defaults::LOOKAHEAD_DAYS, Defaults::MIN_PLANNING_DAYS, Defaults::MAX_PLANNING_DAYS);
+	}
+
 	public function getDailyCapMinutes(string $userId): int {
 		return $this->boundedUserInt($userId, self::KEY_DAILY_CAP_MINUTES, self::DAILY_CAP_DEFAULT, self::DAILY_CAP_MIN, self::DAILY_CAP_MAX);
 	}
@@ -224,7 +238,7 @@ class ConfigService {
 		return in_array($value, self::PACE_PRESETS, true) ? $value : 'compact';
 	}
 
-	/** @return array{dailyCapMinutes:int,dailyTaskCount:int,defaultDurationMinutes:int,taskGapMinutes:int,eventBufferMinutes:int,pacePreset:string,autoRescheduleMinutes:int} */
+	/** @return array{dailyCapMinutes:int,dailyTaskCount:int,defaultDurationMinutes:int,taskGapMinutes:int,eventBufferMinutes:int,pacePreset:string,autoRescheduleMinutes:int,planningDays:int} */
 	public function getSchedulingPolicy(string $userId): array {
 		return [
 			'dailyCapMinutes' => $this->getDailyCapMinutes($userId),
@@ -234,10 +248,14 @@ class ConfigService {
 			'eventBufferMinutes' => $this->getEventBufferMinutes($userId),
 			'pacePreset' => $this->getPacePreset($userId),
 			'autoRescheduleMinutes' => $this->getAutoRescheduleMinutes($userId),
+			'planningDays' => $this->getPlanningDays($userId),
 		];
 	}
 
-	public function setSchedulingPolicy(string $userId, int $dailyCap, int $defaultDuration, int $taskGap, int $eventBuffer, string $preset, int $autoRescheduleMinutes = 15, int $dailyTaskCount = 0): void {
+	public function setSchedulingPolicy(string $userId, int $dailyCap, int $defaultDuration, int $taskGap, int $eventBuffer, string $preset, int $autoRescheduleMinutes = 15, int $dailyTaskCount = 0, int $planningDays = Defaults::LOOKAHEAD_DAYS): void {
+		if ($planningDays < Defaults::MIN_PLANNING_DAYS || $planningDays > Defaults::MAX_PLANNING_DAYS) {
+			throw new \InvalidArgumentException('Planning window must be between ' . Defaults::MIN_PLANNING_DAYS . ' and ' . Defaults::MAX_PLANNING_DAYS . ' days');
+		}
 		if ($dailyCap < self::DAILY_CAP_MIN || $dailyCap > self::DAILY_CAP_MAX) {
 			throw new \InvalidArgumentException('Daily cap must be between ' . self::DAILY_CAP_MIN . ' and ' . self::DAILY_CAP_MAX . ' minutes');
 		}
@@ -266,6 +284,7 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_EVENT_BUFFER_MINUTES, (string)$eventBuffer);
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PACE_PRESET, $preset);
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_AUTO_RESCHEDULE_MINUTES, (string)$autoRescheduleMinutes);
+		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PLANNING_DAYS, (string)$planningDays);
 	}
 
 	/** @return array<int,array<string,mixed>> newest first */

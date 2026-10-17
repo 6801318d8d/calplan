@@ -1,6 +1,8 @@
 <?php
 /** @var array $_ */
 /** @var \OCP\IL10N $l */
+// An end of 24:00 (midnight) shows as 00:00, the latest a time field can hold.
+$hhmm = fn (string $t): string => $t === '24:00' ? '00:00' : (preg_match('/^(\d{1,2}):(\d{2})$/', $t, $m) === 1 ? sprintf('%02d:%s', (int)$m[1], $m[2]) : $t);
 $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $minutes);
 ?>
 <div id="calplan-personal-settings" class="section"
@@ -11,10 +13,43 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	data-event-buffer="<?php p($_['eventBufferMinutes']); ?>"
 	data-pace-preset="<?php p($_['pacePreset']); ?>"
 	data-auto-reschedule="<?php p($_['autoRescheduleMinutes']); ?>"
+	data-planning-days="<?php p($_['planningDays']); ?>"
 	data-history-enabled="<?php p($_['enabled'] ? '1' : '0'); ?>"
 	data-history-retention="<?php p($_['retentionDays']); ?>">
 	<h2>CalPlan</h2>
 	<p class="settings-hint"><?php p($l->t('Choose how much work CalPlan schedules and how much breathing room it leaves.')); ?></p>
+
+	<details class="calplan-settings-group" open>
+		<summary><?php p($l->t('Working hours')); ?></summary>
+		<div class="calplan-settings-group__content">
+	<p class="settings-hint"><?php p($l->t('CalPlan places task blocks inside these hours; unchecked days get no blocks. A task whose start time you set outside them, on a checked day, may also use the rest of that day. An end of 00:00 means midnight.')); ?></p>
+	<?php if ($_['workingHoursSource'] !== 'calplan'): ?>
+		<p class="settings-hint" id="calplan-working-hours-source"><?php p($_['workingHoursSource'] === 'availability'
+			? $l->t('Not saved yet: CalPlan is using your Nextcloud availability (Personal settings → Availability), one window per day.')
+			: $l->t('Not saved yet: CalPlan is using its default, 09:00–17:00 every day.')); ?></p>
+	<?php endif; ?>
+	<div class="calplan-working-hours" role="group" aria-label="<?php p($l->t('Working hours')); ?>">
+		<?php
+		$days = ['mon' => $l->t('Monday'), 'tue' => $l->t('Tuesday'), 'wed' => $l->t('Wednesday'), 'thu' => $l->t('Thursday'), 'fri' => $l->t('Friday'), 'sat' => $l->t('Saturday'), 'sun' => $l->t('Sunday')];
+		foreach ($days as $key => $label):
+			$day = $_['workingHours'][$key] ?? null;
+		?>
+			<div class="calplan-working-day" data-day="<?php p($key); ?>">
+				<input type="checkbox" id="calplan-wh-<?php p($key); ?>" class="calplan-wh-enabled" <?php if ($day !== null): ?>checked<?php endif; ?>>
+				<label for="calplan-wh-<?php p($key); ?>"><?php p($label); ?></label>
+				<span class="calplan-wh-times">
+					<input type="time" step="900" class="calplan-wh-start" aria-label="<?php p($l->t('%s start', [$label])); ?>" value="<?php p($hhmm($day['start'] ?? '09:00')); ?>">
+					<span aria-hidden="true">–</span>
+					<input type="time" step="900" class="calplan-wh-end" aria-label="<?php p($l->t('%s end', [$label])); ?>" value="<?php p($hhmm($day['end'] ?? '17:00')); ?>">
+				</span>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<button id="calplan-copy-working-hours" type="button"><?php p($l->t('Copy Monday to all checked days')); ?></button>
+	<button id="calplan-save-working-hours" class="primary" type="button"><?php p($l->t('Save working hours')); ?></button>
+	<span id="calplan-working-hours-status" class="calplan-save-status" role="status" aria-live="polite"></span>
+		</div>
+	</details>
 
 	<details class="calplan-settings-group" open>
 		<summary><?php p($l->t('Scheduling limits and pace')); ?></summary>
@@ -27,6 +62,11 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 			<option value="relaxed"><?php p($l->t('Relaxed — 30 minute breathing room')); ?></option>
 			<option value="custom"><?php p($l->t('Custom')); ?></option>
 		</select>
+	</div>
+	<div class="calplan-setting-row">
+		<label for="calplan-planning-days"><?php p($l->t('Planning window')); ?></label>
+		<div><input id="calplan-planning-days" type="number" required min="<?php p($_['planningDaysMin']); ?>" max="<?php p($_['planningDaysMax']); ?>" step="1"> <?php p($l->t('days ahead')); ?></div>
+		<p class="settings-hint"><?php p($l->t('CalPlan places blocks only within this many days from today; tasks beyond it are planned as the days pass. A longer window plans further ahead, but each change re-plans more of your calendar.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-daily-cap"><?php p($l->t('Maximum task time per day')); ?></label>
