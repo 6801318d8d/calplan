@@ -135,24 +135,14 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_EVENT_TITLE_MATCH_MODE, $matchMode);
 	}
 
+	/**
+	 * The working hours CalPlan plans in: those saved in CalPlan's settings,
+	 * else the user's Nextcloud availability (Personal settings ->
+	 * Availability), else 09:00-17:00 every day.
+	 */
 	public function getWorkingHours(string $userId): WorkingHours {
-		$json = $this->config->getUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, '');
-		if ($json !== '') {
-			$map = json_decode($json, true);
-			if (is_array($map) && count($map) > 0 && WorkingHoursService::validateMap($map) === null) {
-				return WorkingHoursService::fromMap($map);
-			}
-		}
-
-		$spreedJson = $this->config->getUserValue($userId, 'spreed', 'working_hours', '');
-		if ($spreedJson !== '') {
-			$map = json_decode($spreedJson, true);
-			if (is_array($map) && count($map) > 0 && WorkingHoursService::validateMap($map) === null) {
-				return WorkingHoursService::fromMap($map);
-			}
-		}
-
-		return WorkingHoursService::default();
+		$map = $this->storedWorkingHours($userId) ?? $this->availabilityWorkingHours($userId);
+		return $map !== null ? WorkingHoursService::fromMap($map) : WorkingHoursService::default();
 	}
 
 	/** Whether the last reconcile had tasks to schedule or blocks to maintain. */
@@ -168,6 +158,38 @@ class ConfigService {
 	public function setPlanActive(string $userId, bool $active): void {
 		if ($this->isPlanActive($userId) !== $active) {
 			$this->config->setUserValue($userId, Application::APP_ID, self::KEY_PLAN_ACTIVE, $active ? '1' : '0');
+		}
+	}
+
+	/** @return array<string, array{start: string, end: string}>|null a valid, non-empty `working_hours` map saved in CalPlan */
+	private function storedWorkingHours(string $userId): ?array {
+		$json = $this->config->getUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, '');
+		if ($json === '') {
+			return null;
+		}
+		$map = json_decode($json, true);
+		return is_array($map) && count($map) > 0 && WorkingHoursService::validateMap($map) === null ? $map : null;
+	}
+
+	/**
+	 * The user's Nextcloud availability (a VAVAILABILITY stored on their
+	 * CalDAV inbox) as a working-hours map, or null when none is set.
+	 *
+	 * @return array<string, array{start: string, end: string}>|null
+	 */
+	private function availabilityWorkingHours(string $userId): ?array {
+		if (!class_exists(\OCA\DAV\Db\PropertyMapper::class)) {
+			return null;
+		}
+		try {
+			/** @var \OCA\DAV\Db\PropertyMapper $mapper */
+			$mapper = \OCP\Server::get(\OCA\DAV\Db\PropertyMapper::class);
+			$properties = $mapper->findPropertyByPathAndName($userId, 'calendars/' . $userId . '/inbox', '{urn:ietf:params:xml:ns:caldav}calendar-availability');
+			$value = $properties !== [] ? (string)$properties[0]->getPropertyvalue() : '';
+			return $value !== '' ? WorkingHoursService::fromAvailability($value) : null;
+		} catch (\Throwable $e) {
+			$this->logger?->warning('CalPlan could not read the Nextcloud availability', ['app' => 'calplan', 'exception' => $e]);
+			return null;
 		}
 	}
 
