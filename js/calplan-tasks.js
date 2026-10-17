@@ -17,9 +17,10 @@
  *   2. Task list — renders a small SVG "CalPlan" icon next to any task that
  *      carries the `calplan` category, read from the rendered tag chips.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
- *      bound to whether the open task has the `calplan` category. Changes go
- *      through Tasks' own Vuex actions (so they persist through Tasks' CalDAV
- *      sync); the server re-plans after each write.
+ *      bound to whether the open task has the `calplan` category, plus the
+ *      Duration row. Changes go through
+ *      Tasks' own Vuex actions (so they persist through Tasks' CalDAV sync);
+ *      the server re-plans after each write.
  *
  * Everything is guarded: if the Tasks app, its Vuex store, the Vue router, or
  * the expected DOM is missing or shaped differently across versions, the
@@ -505,7 +506,7 @@
 		backdrop.className = 'calplan-help-backdrop'
 		var taskHelpers = mode === 'task'
 			? '  <h3>' + escapeHtml(t('Optional task-note helpers')) + '</h3>' +
-			  '  <p>' + t('<code>Duration: 15min</code>, <code>Duration: 1hr</code>, or <code>Duration: 1 hour 30 minutes</code> sets the block length. A standard iCalendar DURATION takes priority; otherwise your personal default is used.') + '</p>' +
+			  '  <p>' + t('The <strong>Duration</strong> field under Auto-schedule sets the block length (saved as the task’s <code>ESTIMATED-DURATION</code>). Leave it empty to use your personal default. Clients without the field can still use a notes line such as <code>Duration: 1 hour 30 minutes</code>.') + '</p>' +
 			  '  <p>' + t('<code>First step: open the report and write the heading</code> adds a <strong>👣 First step</strong> line to the calendar block. It is optional and does not change scheduling. Legacy <code>Next:</code> lines still work.') + '</p>'
 			: ''
 		backdrop.innerHTML =
@@ -642,6 +643,337 @@
 		return row
 	}
 
+	// --- 3. Sidebar Duration row ------------------------------------------
+
+	/*
+	 * The Tasks app has no duration field. This one stores the block length in
+	 * the task's ESTIMATED-DURATION property (draft-ietf-calext-ical-tasks: the
+	 * estimated effort, independent of DTSTART/DUE), which IcalCodec reads
+	 * first. It edits the VTODO held by Tasks' own store and saves it through
+	 * Tasks' `updateTask` action, so etags stay consistent. The field shows the
+	 * length CalPlan schedules: ESTIMATED-DURATION, else the standard DURATION,
+	 * else a legacy `Duration:` notes line (removed on the next save).
+	 */
+	var ESTIMATE_PROP = 'estimated-duration'
+	var DURATION_PROP = 'duration'
+	// RFC 5545 durations, as IcalCodec::durationToMinutes reads them.
+	var ISO_DURATION = /^\+?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/i
+	var DURATION_LINE = /^[ \t]*Duration[ \t]*:[ \t]*(.*?)[ \t]*$/im
+	var DURATION_VALUE = /^(?:(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours))?(?:\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes))?$/i
+	var ICON_TIMER = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M11,14H13V8H11M15,1H9V3H15V1Z"/></svg>'
+
+	var ICON_MINUS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19,13H5V11H19V13Z"/></svg>'
+	var ICON_PLUS = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>'
+	var STEP_COMMIT_DELAY_MS = 700
+
+	var defaultDurationMinutes = 30
+
+	/** Minutes from the notes' first `Duration:` line, or 0 when absent/invalid (same grammar as the server). */
+	function noteDurationMinutes(note) {
+		var line = String(note || '').match(DURATION_LINE)
+		if (!line || line[1] === '') return 0
+		var parts = line[1].match(DURATION_VALUE)
+		if (!parts) return 0
+		var total = Math.round(parseFloat(parts[1] || '0') * 60 + parseFloat(parts[2] || '0'))
+		return total > 0 ? total : 0
+	}
+
+	function formatDuration(minutes) {
+		var h = Math.floor(minutes / 60)
+		var m = minutes % 60
+		if (h && m) return t('{h}h {m}min', { h: h, m: m })
+		return h ? t('{h}h', { h: h }) : t('{m}min', { m: m })
+	}
+
+	/** *note* without its first `Duration:` line - only when that line is a duration CalPlan reads. */
+	function noteWithoutDuration(note) {
+		note = String(note || '')
+		if (noteDurationMinutes(note) <= 0) return note
+		var line = note.match(DURATION_LINE)
+		var start = line.index
+		var end = start + line[0].length
+		// The line and its own line break; the rest of the note is untouched.
+		if (note.charAt(end) === '\r' && note.charAt(end + 1) === '\n') end += 2
+		else if (note.charAt(end) === '\n') end += 1
+		else if (start > 0 && note.charAt(start - 1) === '\n') start -= (start > 1 && note.charAt(start - 2) === '\r') ? 2 : 1
+		return note.slice(0, start) + note.slice(end)
+	}
+
+	/** Minutes from an RFC 5545 duration value ("PT1H30M", "P2D"), or 0 (negative and invalid values too). */
+	function isoDurationMinutes(value) {
+		var parts = String(value || '').trim().match(ISO_DURATION)
+		if (!parts) return 0
+		var num = function (i) { return parseInt(parts[i] || '0', 10) }
+		return num(1) * 7 * 24 * 60 + num(2) * 24 * 60 + num(3) * 60 + num(4) + Math.floor((num(5) + 30) / 60)
+	}
+
+	function isoDuration(minutes) {
+		var h = Math.floor(minutes / 60)
+		var m = minutes % 60
+		return 'PT' + (h ? h + 'H' : '') + (m || !h ? m + 'M' : '')
+	}
+
+	function propValue(task, name) {
+		var vtodo = task && task.vtodo
+		var value = vtodo && typeof vtodo.getFirstPropertyValue === 'function' ? vtodo.getFirstPropertyValue(name) : null
+		return value == null ? null : String(value)
+	}
+
+	/** Block length in minutes CalPlan schedules (0 = personal default): ESTIMATED-DURATION, DURATION, then a notes line. */
+	function taskDurationMinutes(task) {
+		var estimate = isoDurationMinutes(propValue(task, ESTIMATE_PROP))
+		if (estimate > 0) return estimate
+		var duration = propValue(task, DURATION_PROP)
+		if (duration !== null) return isoDurationMinutes(duration)
+		return noteDurationMinutes(task && task.note)
+	}
+
+	function loadDefaultDuration() {
+		api('GET', '/settings').then(function (data) {
+			var minutes = data && data.scheduling && data.scheduling.defaultDurationMinutes
+			if (typeof minutes === 'number' && minutes > 0) {
+				defaultDurationMinutes = minutes
+				if (durationRowSpec.row) durationRowSpec.placeholders(durationRowSpec.row)
+			}
+		}).catch(function () {})
+	}
+
+	/*
+	 * Sidebar rows made of − [value] + steppers: a time pair (inputs with
+	 * data-part="hours" and "minutes", read as one total). Each row spec says
+	 * when the row shows, how to read the open task's value and how to write a
+	 * new one into its VTODO; the
+	 * shared code below steps, saves (debounced) and never overwrites a value
+	 * that is being edited. A pending save stays bound to the task it was made
+	 * on, and is saved at once when another task opens.
+	 */
+
+	/** A − [value] + control: it steps the row's total by *step* minutes. */
+	function stepperHtml(id, part, step, label) {
+		var hint = step === 60 ? t('1 h') : t('{n} min', { n: step })
+		return '    <span class="calplan-stepper">' +
+			'<button type="button" class="calplan-stepper-button" data-part="' + part + '" data-step="-' + step + '" aria-label="' + escapeHtml(t('Less: {label}', { label: label })) + '" title="−' + escapeHtml(hint) + '">' + ICON_MINUS + '</button>' +
+			'<input type="number" id="' + id + '" class="calplan-duration-input" data-part="' + part + '" min="0" step="' + (part === 'hours' ? 'any' : '1') + '" inputmode="decimal" aria-label="' + escapeHtml(label) + '" />' +
+			'<button type="button" class="calplan-stepper-button" data-part="' + part + '" data-step="' + step + '" aria-label="' + escapeHtml(t('More: {label}', { label: label })) + '" title="+' + escapeHtml(hint) + '">' + ICON_PLUS + '</button>' +
+			'</span>'
+	}
+
+	function partInput(row, part) { return row.querySelector('input[data-part="' + part + '"]') }
+
+	/** The number in a part's field: hours may be fractional (1.5 h), minutes are whole. */
+	function partNumber(row, part) {
+		var input = partInput(row, part)
+		var raw = input ? String(input.value).replace(',', '.') : ''
+		var num = part === 'hours' ? parseFloat(raw) : parseInt(raw, 10)
+		return isNaN(num) ? 0 : Math.max(0, num)
+	}
+
+	function rowMinutes(row) { return Math.round(partNumber(row, 'hours') * 60) + partNumber(row, 'minutes') }
+
+	function showRowValue(row, value) {
+		if ('minutes' in value) {
+			partInput(row, 'hours').value = value.minutes > 0 ? String(Math.floor(value.minutes / 60)) : ''
+			partInput(row, 'minutes').value = value.minutes > 0 ? String(value.minutes % 60) : ''
+		}
+	}
+
+	function rowValue(row, spec) {
+		var value = {}
+		if (spec.time) value.minutes = rowMinutes(row)
+		return value
+	}
+
+	/** Set (minutes > 0) or remove a DURATION-valued property; true when it changed. */
+	function setDurationProp(task, name, minutes) {
+		var current = task.vtodo.getFirstPropertyValue(name)
+		var changed = minutes > 0 ? String(current || '') !== isoDuration(minutes) : current != null
+		if (changed) {
+			task.vtodo.removeAllProperties(name)
+			if (minutes > 0) task.vtodo.addPropertyWithValue(name, isoDuration(minutes))
+		}
+		return changed
+	}
+
+	var durationRowSpec = {
+		className: 'calplan-duration-row',
+		time: true,
+		html: function () {
+			return '  <span class="content__icon">' + ICON_TIMER + '</span>' +
+				'  <label class="content__name" for="calplanDurationHours">' + escapeHtml(t('Duration')) + '</label>' +
+				'  <div class="item__actions">' +
+				stepperHtml('calplanDurationHours', 'hours', 60, t('Duration hours')) +
+				'    <span class="calplan-duration-unit">' + escapeHtml(t('h')) + '</span>' +
+				stepperHtml('calplanDurationMinutes', 'minutes', 15, t('Duration minutes')) +
+				'    <span class="calplan-duration-unit">' + escapeHtml(t('min')) + '</span>' +
+				'  </div>'
+		},
+		// A task without a duration shows "–": it gets the default, named in the tooltip.
+		placeholders: function (row) {
+			partInput(row, 'hours').placeholder = '–'
+			partInput(row, 'minutes').placeholder = '–'
+			row.title = t('Length of the calendar block. Leave empty to use your default ({duration}).', { duration: formatDuration(defaultDurationMinutes) })
+		},
+		visible: function (task) { return !!task },
+		read: function (task) { return { minutes: taskDurationMinutes(task) } },
+		/** ESTIMATED-DURATION; a legacy `Duration:` notes line is dropped on save. Null when nothing changed. */
+		write: function (task, value) {
+			var note = noteWithoutDuration(task.note)
+			var noteChanged = note !== String(task.note || '')
+			var propChanged = setDurationProp(task, ESTIMATE_PROP, value.minutes)
+			if (!propChanged && !noteChanged) return null
+			return noteChanged ? { note: note } : {}
+		},
+	}
+
+	var SIDEBAR_ROWS = [durationRowSpec]
+
+	/** Write the row's value into *task* (spec.write) and save it through Tasks' Vuex store. */
+	function commitRow(row, spec, task) {
+		var store = vuexStore()
+		if (!store || !task || !task.vtodo) { warn('sidebar row: no store/task'); return }
+		if (isReadOnly(task)) return
+		var result = spec.write(task, rowValue(row, spec))
+		if (!result) return
+		if (typeof task.updateLastModified === 'function') task.updateLastModified()
+		// setNote also runs updateTask, which serializes the whole VTODO.
+		if (result.note !== undefined) {
+			store.dispatch('setNote', { task: task, note: result.note })
+		} else {
+			store.dispatch('updateTask', task)
+		}
+		// The PUT re-plans on the server; then refresh the status.
+		whenTaskWritten(task, function (ok) {
+			if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
+			loadReconcileStatus().catch(function () {})
+		})
+	}
+
+	/** Save the row's pending change (made on its task) now. */
+	function flushPending(row, spec) {
+		var pending = row.calplanPending
+		if (!pending) return
+		clearTimeout(pending.timer)
+		row.calplanPending = null
+		row.removeAttribute('data-pending')
+		commitRow(row, spec, pending.task)
+	}
+
+	/**
+	 * Save the row's value for *task* after STEP_COMMIT_DELAY_MS, so that
+	 * quick steps or an hours-then-minutes edit are saved once; meanwhile
+	 * syncRow leaves the row alone (data-pending). The save waits while the
+	 * user is still typing in the row.
+	 */
+	function scheduleCommit(row, spec, task) {
+		if (!task) return
+		var pending = row.calplanPending
+		if (pending && pending.task !== task) flushPending(row, spec)
+		if (row.calplanPending) clearTimeout(row.calplanPending.timer)
+		function fire() {
+			var active = document.activeElement
+			if (active && active.tagName === 'INPUT' && row.contains(active)) {
+				row.calplanPending.timer = setTimeout(fire, STEP_COMMIT_DELAY_MS)
+				return
+			}
+			flushPending(row, spec)
+		}
+		row.calplanPending = { task: task, timer: setTimeout(fire, STEP_COMMIT_DELAY_MS) }
+		row.setAttribute('data-pending', '1')
+	}
+
+	/**
+	 * Step a part by *delta*: the row's total moves, minute steps snapping to
+	 * CalPlan's 15-minute grid (45 min + 15 = 1 h 0 min). An empty time starts
+	 * from zero.
+	 */
+	function stepRow(row, spec, part, delta) {
+		var task = openTask()
+		if (row.calplanPending && row.calplanPending.task !== task) {
+			// Another task opened since the last step: save that one, show this one.
+			flushPending(row, spec)
+			syncRow(row, spec, task)
+		}
+		if (!task || isReadOnly(task)) return
+		var current = rowMinutes(row)
+		if (part === 'hours') {
+			// Whole hours, keeping the minutes (1 h 15 + 1 h = 2 h 15); under an
+			// hour, − has no hour to take and leaves the value alone.
+			if (current + delta < 0) return
+			showRowValue(row, { minutes: current + delta })
+		} else {
+			var grid = Math.abs(delta)
+			var next = delta > 0 ? Math.floor(current / grid) * grid + grid : Math.ceil(current / grid) * grid - grid
+			showRowValue(row, { minutes: Math.max(0, next) })
+		}
+		scheduleCommit(row, spec, task)
+	}
+
+	function createRow(spec) {
+		var row = document.createElement('div')
+		row.className = 'property__item ' + spec.className
+		row.innerHTML = '<div class="item__content">' + spec.html() + '</div>'
+		spec.placeholders(row)
+		var inputs = row.querySelectorAll('.calplan-duration-input')
+		for (var i = 0; i < inputs.length; i++) {
+			// The task being edited is the one open when typing started.
+			inputs[i].addEventListener('focus', function () { row.calplanEditTask = openTask() })
+			inputs[i].addEventListener('change', function () {
+				scheduleCommit(row, spec, (row.calplanPending && row.calplanPending.task) || row.calplanEditTask || openTask())
+			})
+			inputs[i].addEventListener('keydown', function (e) {
+				if (e.key === 'Enter') { e.preventDefault(); e.target.blur() }
+			})
+		}
+		// Leaving the row saves at once.
+		row.addEventListener('focusout', function (e) {
+			if (row.calplanPending && !(e.relatedTarget && row.contains(e.relatedTarget))) {
+				setTimeout(function () {
+					var active = document.activeElement
+					if (!(active && row.contains(active))) flushPending(row, spec)
+				}, 0)
+			}
+		})
+		var buttons = row.querySelectorAll('.calplan-stepper-button')
+		for (var j = 0; j < buttons.length; j++) {
+			buttons[j].addEventListener('click', function (e) {
+				e.preventDefault()
+				stepRow(row, spec, e.currentTarget.getAttribute('data-part'), parseInt(e.currentTarget.getAttribute('data-step'), 10))
+			})
+		}
+		return row
+	}
+
+	/** Show *task*'s value; never overwrite a value being edited or a pending save of the same task. */
+	function syncRow(row, spec, task) {
+		// A change still pending for another task is saved before this one shows.
+		if (row.calplanPending && row.calplanPending.task !== task) flushPending(row, spec)
+		var show = !!task && spec.visible(task)
+		if (row.hidden === show) row.hidden = !show
+		if (!show || row.calplanPending) return
+		var readOnly = isReadOnly(task)
+		var controls = row.querySelectorAll('input, .calplan-stepper-button')
+		for (var i = 0; i < controls.length; i++) {
+			if (controls[i].disabled !== readOnly) controls[i].disabled = readOnly
+		}
+		var active = document.activeElement
+		if (active && active.tagName === 'INPUT' && row.contains(active)) return
+		showRowValue(row, spec.read(task))
+	}
+
+	/** Keep the extra rows right after the Auto-schedule row, in SIDEBAR_ROWS order. */
+	function ensureExtraRows(afterRow, task) {
+		var anchor = afterRow
+		SIDEBAR_ROWS.forEach(function (spec) {
+			if (!spec.row || !spec.row.isConnected || spec.row.previousElementSibling !== anchor) {
+				if (spec.row && spec.row.isConnected) spec.row.remove()
+				spec.row = createRow(spec)
+				anchor.parentNode.insertBefore(spec.row, anchor.nextSibling)
+			}
+			syncRow(spec.row, spec, task)
+			anchor = spec.row
+		})
+	}
+
 	var injectedRow = null
 
 	function ensureSidebarCheckbox() {
@@ -655,6 +987,7 @@
 		if (!anchor) return
 		var anchorRow = anchor.closest('.property__item') || anchor.parentElement
 		if (!anchorRow) return
+		// One lookup per pass: every row shows the same task.
 		var task = openTask()
 
 		if (!(injectedRow && injectedRow.isConnected && injectedRow.closest('.app-sidebar') === sidebar)) {
@@ -662,12 +995,13 @@
 			anchorRow.parentNode.insertBefore(injectedRow, anchorRow.nextSibling)
 		}
 		renderSwitch(injectedRow, isFlagged(task), isReadOnly(task))
+		ensureExtraRows(injectedRow, task)
 	}
 
 	// --- Driver ----------------------------------------------------------
 
 	// Elements CalPlan renders itself; changes inside them never need a pass.
-	var OWN_UI = '.calplan-toggle-row, .calplan-task-icon, .calplan-reconcile-item, .calplan-help-backdrop'
+	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-task-icon, .calplan-reconcile-item, .calplan-help-backdrop'
 
 	function isOwnMutation(record) {
 		var node = record.target
@@ -694,8 +1028,8 @@
 		// scan their DOM, or install a global observer outside Tasks/Calendar.
 		if (!isSupportedAppPath()) return
 		// The icons come first, so that no row or badge is ever built without
-		// them; the status follows, and the observer takes over from the first
-		// full pass.
+		// them; the status and the default duration follow, and the observer
+		// takes over from the first full pass.
 		loadIcons(function () {
 			scanTaskList(document)
 			ensureSidebarCheckbox()
@@ -703,6 +1037,7 @@
 			var obs = new MutationObserver(onMutate)
 			obs.observe(document.body, { childList: true, subtree: true })
 			if (isCalendarPath()) return // the rest serves the Tasks page
+			loadDefaultDuration()
 			// The reconcile status (tasks CalPlan rewrote, to reload): now, then
 			// every minute while the tab is visible (reconciles from cron, other
 			// clients or event saves).

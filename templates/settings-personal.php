@@ -40,7 +40,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	<div class="calplan-setting-row">
 		<label for="calplan-default-duration"><?php p($l->t('Default task duration')); ?></label>
 		<div><input id="calplan-default-duration" type="number" required min="<?php p($_['defaultDurationMin']); ?>" max="<?php p($_['defaultDurationMax']); ?>" step="15"> <?php p($l->t('minutes')); ?></div>
-		<p class="settings-hint"><?php p($l->t('Used only when a task has neither an iCalendar DURATION nor a Duration: line in its notes.')); ?></p>
+		<p class="settings-hint"><?php p($l->t('Used only when a task has no duration: none set in the Tasks sidebar Duration field, no iCalendar DURATION and no Duration: line in its notes.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-task-gap"><?php p($l->t('Recovery time between CalPlan tasks')); ?></label>

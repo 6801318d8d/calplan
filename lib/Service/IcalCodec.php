@@ -7,10 +7,10 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Pure iCalendar <-> model codec using the Sabre\VObject library bundled with
- * Nextcloud. No custom X- properties: tasks are flagged via the standard
- * CATEGORIES value `calplan`, and the working-slot VEVENTs we create
- * carry only standard properties (UID `calplan-<taskUID>`, RELATED-TO back to
- * the VTODO, CATEGORIES `calplan-slot`).
+ * Nextcloud. Tasks are flagged via the standard CATEGORIES value `calplan`;
+ * a task's own estimate is its ESTIMATED-DURATION (draft-ietf-calext-ical-tasks).
+ * The working-slot VEVENTs we create carry UID `calplan-<taskUID>`, RELATED-TO
+ * back to the VTODO and CATEGORIES `calplan-slot`.
  */
 
 namespace OCA\AutoSchedule\Service;
@@ -68,13 +68,18 @@ class IcalCodec {
 			$status = strtoupper(self::nonEmpty(self::stringProp($vtodo, 'STATUS')) ?? 'NEEDS-ACTION');
 			$categories = self::categories($vtodo);
 			$description = self::nonEmpty(self::stringProp($vtodo, 'DESCRIPTION'));
-			$durationRaw = self::stringProp($vtodo, 'DURATION');
-			// Prefer the standard RFC 5545 property. Nextcloud Tasks has no
-			// duration field, so a simple `Duration: 15min` notes line is the
-			// user-friendly fallback before the 30-minute default.
-			$estimatedMinutes = $durationRaw !== ''
-				? self::durationToMinutes($durationRaw)
-				: self::notesDurationToMinutes($description ?? '');
+			// ESTIMATED-DURATION (draft-ietf-calext-ical-tasks) is the task's
+			// own effort estimate, written by the Tasks sidebar Duration field.
+			// Then the standard RFC 5545 DURATION, then a simple
+			// `Duration: 15min` notes line for clients without the field,
+			// before the 30-minute default.
+			$estimatedMinutes = self::durationToMinutes(self::stringProp($vtodo, 'ESTIMATED-DURATION'));
+			if ($estimatedMinutes <= 0) {
+				$durationRaw = self::stringProp($vtodo, 'DURATION');
+				$estimatedMinutes = $durationRaw !== ''
+					? self::durationToMinutes($durationRaw)
+					: self::notesDurationToMinutes($description ?? '');
+			}
 			if ($estimatedMinutes <= 0) {
 				$estimatedMinutes = $defaultEstimateMinutes;
 			}

@@ -66,9 +66,10 @@ Completing, cancelling, or untagging the task removes its generated event.
 
 CalPlan uses the first available value:
 
-1. the task's standard iCalendar `DURATION`;
-2. a `Duration:` line in the notes; or
-3. your default duration setting, initially 30 minutes.
+1. the **Duration** field in the Tasks sidebar (`ESTIMATED-DURATION`);
+2. the task's standard iCalendar `DURATION`;
+3. a `Duration:` line in the notes; or
+4. your default duration setting, initially 30 minutes.
 
 Examples:
 
@@ -88,6 +89,13 @@ First step: open the document and write the heading
 
 It is display-only and does not affect scheduling. The older `Next:` form is
 still accepted.
+
+### Task options in the Tasks sidebar
+
+Below **Auto-schedule**, CalPlan adds:
+
+- **Duration** — the block length, saved as the task's `ESTIMATED-DURATION`
+  (draft-ietf-calext-ical-tasks). Empty means your default duration.
 
 ## How scheduling works
 

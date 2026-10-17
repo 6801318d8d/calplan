@@ -31,7 +31,13 @@ The event also mirrors the task's description, priority, location, URL
 (commas percent-encoded, which survives Sabre's round trip), progress, and
 parent/child context.
 
-No custom `X-` properties or database tables are required.
+A task's own settings live on its `VTODO`:
+
+| Property | Meaning |
+|---|---|
+| `ESTIMATED-DURATION` | Block length (draft-ietf-calext-ical-tasks), set by the sidebar Duration field |
+
+No database tables are required.
 
 ## Reconcile flow
 
@@ -291,8 +297,8 @@ and before an export, and a deleted account's history is deleted with it.
 routes (not their public pages), for logged-in users the app is enabled for. The
 script adds:
 
-- the Tasks sidebar Auto-schedule switch (disabled for tasks Tasks cannot
-  save);
+- the Tasks sidebar Auto-schedule switch and the Duration row (disabled for
+  tasks Tasks cannot save);
 - task-list badges;
 - Reconcile and help actions in Tasks and Calendar; and
 - latest-run status in the help dialog.

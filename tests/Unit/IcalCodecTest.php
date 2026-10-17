@@ -66,6 +66,18 @@ class IcalCodecTest extends TestCase {
 		$this->assertSame(45, $tasks[0]->estimatedMinutes);
 	}
 
+	public function testParseTasksEstimatedDurationWinsOverDurationAndNotes(): void {
+		$this->requireSabre();
+		$tasks = IcalCodec::parseTasks($this->vtodo("ESTIMATED-DURATION:PT1H15M\r\nDURATION:PT45M\r\nDESCRIPTION:Duration: 15min\r\n"));
+		$this->assertSame(75, $tasks[0]->estimatedMinutes);
+	}
+
+	public function testParseTasksGarbageEstimatedDurationFallsBackToNotes(): void {
+		$this->requireSabre();
+		$tasks = IcalCodec::parseTasks($this->vtodo("ESTIMATED-DURATION:banana\r\nDESCRIPTION:Duration: 15min\r\n"));
+		$this->assertSame(15, $tasks[0]->estimatedMinutes);
+	}
+
 	public function testParseTasksMarksAnAllDayStart(): void {
 		$this->requireSabre();
 		$this->assertTrue(IcalCodec::parseTasks($this->vtodo("DTSTART;VALUE=DATE:20260820\r\n"))[0]->startAllDay);

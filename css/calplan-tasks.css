@@ -97,6 +97,141 @@
 	align-items: center;
 }
 
+/* 3. Sidebar Duration row — same geometry as the Auto-schedule row, hidden
+ *    while no task is open (the [hidden] rule beats `display: flex`). */
+.property__item.calplan-duration-row {
+	border-bottom: 1px solid var(--color-border);
+	padding: 0 6px;
+	width: 100%;
+	color: var(--color-text-lighter);
+	display: flex;
+}
+
+.property__item.calplan-duration-row[hidden] {
+	display: none !important;
+}
+
+.property__item.calplan-duration-row .item__content {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	line-height: var(--default-clickable-area);
+	min-width: 0;
+	flex-grow: 1;
+	gap: 0 4px;
+}
+
+.property__item.calplan-duration-row .content__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: var(--default-clickable-area);
+	width: var(--default-clickable-area);
+	min-width: var(--default-clickable-area);
+	flex-shrink: 0;
+}
+
+.property__item.calplan-duration-row .content__name {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding-right: 14px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The steppers move under the label when the sidebar is too narrow for both. */
+.property__item.calplan-duration-row .item__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 4px;
+	margin-inline-start: auto;
+	padding-inline-end: 8px;
+}
+
+/* − [value] + steppers. The bordered box is the stepper; the input inside is
+ * borderless. !important beats core inputs.css/buttons, whose long
+ * :not() selectors outrank these classes. Native spinners stay hidden. */
+.calplan-stepper {
+	display: inline-flex;
+	align-items: center;
+	height: 36px;
+	padding: 0 2px;
+	border: 2px solid var(--color-border-maxcontrast, #949494);
+	border-radius: var(--border-radius-element, var(--border-radius-large, 10px));
+	background-color: var(--color-main-background);
+	transition: border-color 0.1s ease;
+}
+
+.calplan-stepper:hover {
+	border-color: var(--color-main-text);
+}
+
+.calplan-stepper:focus-within {
+	border-color: var(--color-primary-element, #0082c9);
+}
+
+.calplan-stepper .calplan-duration-input {
+	width: 2.6em !important;
+	min-width: 0 !important;
+	height: 30px !important;
+	min-height: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	outline: none !important;
+	box-shadow: none !important;
+	background: transparent !important;
+	color: var(--color-main-text);
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+	-webkit-appearance: textfield;
+	-moz-appearance: textfield;
+	appearance: textfield;
+}
+
+.calplan-stepper .calplan-duration-input::-webkit-inner-spin-button,
+.calplan-stepper .calplan-duration-input::-webkit-outer-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+
+.calplan-stepper .calplan-stepper-button {
+	display: inline-flex !important;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 28px !important;
+	height: 28px !important;
+	min-width: 0 !important;
+	min-height: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	border-radius: 50% !important;
+	background: transparent !important;
+	color: var(--color-text-maxcontrast, #767676);
+	cursor: pointer;
+	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.calplan-stepper .calplan-stepper-button:hover,
+.calplan-stepper .calplan-stepper-button:focus-visible {
+	background-color: var(--color-background-hover) !important;
+	color: var(--color-main-text);
+}
+
+.calplan-stepper .calplan-stepper-button:active {
+	background-color: var(--color-primary-element-light, rgba(0, 130, 201, 0.15)) !important;
+	color: var(--color-primary-element, #0082c9);
+}
+
+.calplan-duration-unit {
+	margin-inline-end: 6px;
+}
+
 .calplan-help-button,
 .calplan-help-close {
 	border: 0;
