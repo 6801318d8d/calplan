@@ -66,6 +66,26 @@ class IcalCodecTest extends TestCase {
 		$this->assertSame(45, $tasks[0]->estimatedMinutes);
 	}
 
+	public function testParseTasksMarksAnAllDayStart(): void {
+		$this->requireSabre();
+		$this->assertTrue(IcalCodec::parseTasks($this->vtodo("DTSTART;VALUE=DATE:20260820\r\n"))[0]->startAllDay);
+		$this->assertFalse(IcalCodec::parseTasks($this->vtodo("DTSTART:20260820T090000Z\r\n"))[0]->startAllDay);
+	}
+
+	public function testBlockRoundTrip(): void {
+		$this->requireSabre();
+		$task = new \OCA\AutoSchedule\Model\Task('task-1', 'Do a thing', estimatedMinutes: 60, autoSchedule: true);
+		$start = new \DateTimeImmutable('2026-08-20 09:00:00', new \DateTimeZone('UTC'));
+		$end = new \DateTimeImmutable('2026-08-20 10:00:00', new \DateTimeZone('UTC'));
+		$ics = IcalCodec::buildSlotEvent($task, $start, $end, $start);
+		$this->assertStringContainsString("UID:calplan-task-1\r\n", $ics);
+		// Block times are written in UTC, so no VTIMEZONE is needed.
+		$this->assertStringContainsString("DTSTART:20260820T090000Z\r\n", $ics);
+		$events = IcalCodec::parseEvents($ics);
+		$this->assertSame('task-1', $events[0]->autoScheduleTaskUid);
+		$this->assertStringEndsWith('Do a thing', $events[0]->summary);
+	}
+
 	public function testParseTasksDurationHoursAndMinutes(): void {
 		$this->requireSabre();
 		$tasks = IcalCodec::parseTasks($this->vtodo("DURATION:PT1H30M\r\n"));
@@ -206,5 +226,94 @@ class IcalCodecTest extends TestCase {
 		$events = IcalCodec::parseEvents($ics);
 		$this->assertCount(1, $events);
 		$this->assertNull($events[0]->transp);
+	}
+
+	private function vevent(string $body): string {
+		return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\n" . $body . "END:VEVENT\r\nEND:VCALENDAR\r\n";
+	}
+
+	public function testAllDayAndFloatingTimesAreTheUsersTimes(): void {
+		$this->requireSabre();
+		$ny = new \DateTimeZone('America/New_York');
+		$task = IcalCodec::parseTasks($this->vtodo("DUE;VALUE=DATE:20261021\r\nDTSTART:20261020T100000\r\n"), 30, $ny)[0];
+		$this->assertSame('2026-10-21T00:00:00-04:00', $task->due->format(DATE_ATOM));
+		$this->assertSame('2026-10-20T10:00:00-04:00', $task->start->format(DATE_ATOM));
+		$event = IcalCodec::parseEvents($this->vevent("UID:vacation\r\nDTSTART;VALUE=DATE:20261020\r\n"), null, null, new \DateTimeZone('Australia/Sydney'))[0];
+		// An all-day event without DTEND lasts that whole day, the user's day.
+		$this->assertSame('2026-10-20T00:00:00+11:00', $event->start->format(DATE_ATOM));
+		$this->assertSame('2026-10-21T00:00:00+11:00', $event->end->format(DATE_ATOM));
+	}
+
+	public function testAnEventWithADurationLastsThatLong(): void {
+		$this->requireSabre();
+		$event = IcalCodec::parseEvents($this->vevent("UID:m\r\nDTSTART;TZID=Europe/Rome:20261020T090000\r\nDURATION:PT8H\r\n"))[0];
+		$this->assertSame(8 * 3600, $event->end->getTimestamp() - $event->start->getTimestamp());
+		// Recurring occurrences keep their DURATION too.
+		$events = IcalCodec::parseEvents($this->vevent("UID:r\r\nDTSTART:20261019T090000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"),
+			new \DateTimeImmutable('2026-10-18T00:00:00Z'), new \DateTimeImmutable('2026-10-25T00:00:00Z'));
+		$this->assertCount(3, $events);
+		$this->assertSame(3600, $events[2]->end->getTimestamp() - $events[2]->start->getTimestamp());
+	}
+
+	public function testAReversedEventIsSkipped(): void {
+		$this->requireSabre();
+		$this->assertSame([], IcalCodec::parseEvents($this->vevent("UID:x\r\nDTSTART:20261020T100000Z\r\nDTEND:20261020T093000Z\r\n")));
+	}
+
+	public function testAnOldDailyEventStillCountsToday(): void {
+		$this->requireSabre();
+		$events = IcalCodec::parseEvents($this->vevent("UID:lunch\r\nDTSTART:20160104T120000Z\r\nDTEND:20160104T130000Z\r\nRRULE:FREQ=DAILY\r\n"),
+			new \DateTimeImmutable('2026-10-19T00:00:00Z'), new \DateTimeImmutable('2026-10-21T00:00:00Z'));
+		$this->assertCount(2, $events);
+		$this->assertSame('2026-10-19 12:00', $events[0]->start->format('Y-m-d H:i'));
+	}
+
+	public function testOverriddenOccurrencesOfARecurringTaskAreNotTasks(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\n"
+			. "BEGIN:VTODO\r\nUID:r\r\nSUMMARY:Weekly report\r\nDTSTART:20261012T090000Z\r\nRRULE:FREQ=WEEKLY\r\nCATEGORIES:calplan\r\nEND:VTODO\r\n"
+			. "BEGIN:VTODO\r\nUID:r\r\nRECURRENCE-ID:20261019T090000Z\r\nSUMMARY:Weekly report (moved)\r\nCATEGORIES:calplan\r\nEND:VTODO\r\n"
+			. "END:VCALENDAR\r\n";
+		$tasks = IcalCodec::parseTasks($ics);
+		$this->assertCount(1, $tasks);
+		$this->assertSame('Weekly report', $tasks[0]->title);
+		// The categories are changed on the master component.
+		$this->assertStringContainsString("SUMMARY:Weekly report\r\nDTSTART:20261012T090000Z\r\nRRULE:FREQ=WEEKLY\r\nCATEGORIES:calplan,calplan-review", IcalCodec::replaceTaskCategories($ics, ['calplan', 'calplan-review']));
+	}
+
+	public function testTheFlagIsMatchedLikeTheTasksUi(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VTODO\r\nUID:c\r\nSUMMARY:C\r\nCATEGORIES:work, CalPlan\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+		$task = IcalCodec::parseTasks($ics)[0];
+		$this->assertSame(['work', 'CalPlan'], $task->categories);
+		$this->assertTrue($task->autoSchedule);
+		$this->assertSame(['work'], array_values(array_filter($task->reviewCategories(false), fn ($c) => $c !== Defaults::REVIEW_CATEGORY)));
+	}
+
+	public function testABlockRoundTripsUnchanged(): void {
+		$this->requireSabre();
+		$now = new \DateTimeImmutable('2026-08-19 08:00:00', new \DateTimeZone('UTC'));
+		$task = new \OCA\AutoSchedule\Model\Task(id: 'T', title: 'Visit', priority: 3, url: 'https://en.wikipedia.org/wiki/Washington,_D.C.',
+			location: '0', description: "line one\r\nline two", classification: 'PRIVATE');
+		$ics = IcalCodec::buildSlotEvent($task, $now->modify('+1 hour'), $now->modify('+2 hours'), $now);
+		$this->assertStringContainsString("CLASS:PRIVATE\r\n", $ics);
+		$event = IcalCodec::parseEvents($ics)[0];
+		$expected = IcalCodec::slotContent($task, $now);
+		$this->assertSame($expected['url'], $event->url);
+		$this->assertSame($expected['location'], $event->location);
+		$this->assertSame($expected['description'], $event->description);
+		$this->assertSame($expected['classification'], $event->classification);
+	}
+
+	public function testATaskTitledZeroKeepsItsTitle(): void {
+		$this->requireSabre();
+		$ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VTODO\r\nUID:z\r\nSUMMARY:0\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+		$this->assertSame('0', IcalCodec::parseTasks($ics)[0]->title);
+	}
+
+	public function testANotesDurationIsReadOnItsOwnLineOnly(): void {
+		$this->requireSabre();
+		$tasks = IcalCodec::parseTasks($this->vtodo("DESCRIPTION:Duration:\\n45min\r\n"));
+		$this->assertSame(Defaults::DEFAULT_ESTIMATE_MINUTES, $tasks[0]->estimatedMinutes);
 	}
 }

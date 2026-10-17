@@ -20,7 +20,9 @@ use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\Calendar\Events\CalendarObjectCreatedEvent;
 use OCP\Calendar\Events\CalendarObjectDeletedEvent;
+use OCP\Calendar\Events\CalendarObjectMovedEvent;
 use OCP\Calendar\Events\CalendarObjectMovedToTrashEvent;
+use OCP\Calendar\Events\CalendarObjectRestoredEvent;
 use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
 
 class Application extends App implements IBootstrap {
@@ -36,17 +38,20 @@ class Application extends App implements IBootstrap {
 		// (<background-jobs>) rather than registered here: NC's
 		// IRegistrationContext has no registerBackgroundJob() method.
 
-		// Reconcile synchronously on local VTODO changes (the listener filters
-		// these broad public OCP events by object component). This keeps completion,
-		// date edits and deletes immediate without making an ordinary VEVENT save
-		// wait for a full-user schedule. VEVENT changes are picked up by cron or an
-		// on-demand reconcile; a deduplicated deferred job is the scale follow-up.
+		// Re-plan on local VTODO changes, once per user at the end of the
+		// request (the listener filters these broad public OCP events by object
+		// component and skips users with nothing to plan). Task edits thus move
+		// blocks before the client gets its answer. VEVENT changes are picked up
+		// by cron or an on-demand reconcile.
 		$context->registerEventListener(CalendarObjectCreatedEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectUpdatedEvent::class, CalendarObjectChangeListener::class);
 		$context->registerEventListener(CalendarObjectDeletedEvent::class, CalendarObjectChangeListener::class);
 		// NC trashes rather than hard-deletes by default (retention != 0), dispatching
-		// CalendarObjectMovedToTrashEvent instead of ...DeletedEvent - handle both.
+		// CalendarObjectMovedToTrashEvent instead of ...DeletedEvent - handle both,
+		// plus restores from the trash bin and moves between calendars.
 		$context->registerEventListener(CalendarObjectMovedToTrashEvent::class, CalendarObjectChangeListener::class);
+		$context->registerEventListener(CalendarObjectRestoredEvent::class, CalendarObjectChangeListener::class);
+		$context->registerEventListener(CalendarObjectMovedEvent::class, CalendarObjectChangeListener::class);
 	}
 
 	/** @psalm-suppress UndefinedClass */
