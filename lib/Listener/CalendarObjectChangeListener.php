@@ -19,7 +19,8 @@ declare(strict_types=1);
  * - VEVENT changes: an ordinary event changes busy time, so blocks move at once
  *   instead of at the next cron pass.
  *
- * Skipped: SuperCalPlan's own writes and blocks, users the app is not enabled for,
+ * Skipped: SuperCalPlan's own writes and blocks, users the app is not enabled for
+ * (or CalPlan is),
  * users whose last reconcile had nothing to plan (ConfigService::isPlanActive;
  * for a task, unless it carries `calplan`), users whose client holds the
  * re-plans back while it writes many tasks (ConfigService::holdReplans), the
@@ -136,7 +137,7 @@ class CalendarObjectChangeListener implements IEventListener {
 
 	private function isEnabledFor(string $userId): bool {
 		$user = $this->userManager->get($userId);
-		return $user !== null && $this->appManager->isEnabledForUser(Application::APP_ID, $user);
+		return $user !== null && Application::isActiveFor($this->appManager, $user);
 	}
 
 	/** Whether an event of *raw* is opaque and lies (partly) in the user's planning window. */

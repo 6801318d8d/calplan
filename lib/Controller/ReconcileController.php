@@ -16,8 +16,10 @@ declare(strict_types=1);
 
 namespace OCA\SuperCalPlan\Controller;
 
+use OCA\SuperCalPlan\AppInfo\Application;
 use OCA\SuperCalPlan\Service\ConfigService;
 use OCA\SuperCalPlan\Service\ReconcileService;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\DataResponse;
@@ -32,6 +34,7 @@ class ReconcileController extends OCSController {
 		private ReconcileService $reconcileService,
 		private IUserSession $userSession,
 		private ConfigService $configService,
+		private IAppManager $appManager,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -46,12 +49,17 @@ class ReconcileController extends OCSController {
 	 * the per-write re-plans) and report how many working-slot events were
 	 * (re)created or removed by this very run.
 	 *
-	 * @return DataResponse<Http::STATUS_OK, array{reconciled: int, placed: int, removed: int, unscheduled: int}, array{}>
+	 * @return DataResponse<Http::STATUS_OK, array{reconciled: int, placed: int, removed: int, unscheduled: int}, array{}>|DataResponse<Http::STATUS_CONFLICT, array{error: string}, array{}>
 	 *
 	 * 200: Reconciliation complete
+	 * 409: CalPlan is enabled for the user, so SuperCalPlan stays idle
 	 */
 	#[NoAdminRequired]
 	public function reconcileNow(): DataResponse {
+		$user = $this->userSession->getUser();
+		if ($user !== null && $this->appManager->isEnabledForUser(Application::CALPLAN_APP_ID, $user)) {
+			return new DataResponse(['error' => 'CalPlan is enabled: disable it to let SuperCalPlan plan your tasks.'], Http::STATUS_CONFLICT);
+		}
 		$uid = $this->userId();
 		$this->configService->releaseReplans($uid);
 		$results = $this->reconcileService->reconcileUser($uid, true, 'manual');

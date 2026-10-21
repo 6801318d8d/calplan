@@ -43,6 +43,11 @@ After a task block ends, SuperCalPlan can add a filterable `calplan-review` (“
     <background-jobs>
         <job>OCA\SuperCalPlan\BackgroundJob\ReconcileJob</job>
     </background-jobs>
+    <repair-steps>
+        <install>
+            <step>OCA\SuperCalPlan\Migration\ImportCalPlanSettings</step>
+        </install>
+    </repair-steps>
     <settings>
         <personal>OCA\SuperCalPlan\Settings\Personal</personal>
         <personal-section>OCA\SuperCalPlan\Settings\PersonalSection</personal-section>

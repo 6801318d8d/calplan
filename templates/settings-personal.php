@@ -18,6 +18,9 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	data-history-enabled="<?php p($_['enabled'] ? '1' : '0'); ?>"
 	data-history-retention="<?php p($_['retentionDays']); ?>">
 	<h2>SuperCalPlan</h2>
+	<?php if ($_['calplanEnabled']): ?>
+		<p class="calplan-warning"><strong><?php p($l->t('SuperCalPlan is paused because CalPlan is enabled.')); ?></strong> <?php p($l->t('Both apps manage the same task blocks. Disable CalPlan in Apps to let SuperCalPlan plan your tasks; your blocks and task tags stay as they are.')); ?></p>
+	<?php endif; ?>
 	<p class="settings-hint"><?php p($l->t('Choose how much work SuperCalPlan schedules and how much breathing room it leaves.')); ?></p>
 
 	<details class="calplan-settings-group" open>

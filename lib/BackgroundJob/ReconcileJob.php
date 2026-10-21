@@ -7,8 +7,8 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Cron-driven reconciliation pass, declared in appinfo/info.xml. On each tick
- * it reconciles every user for whom the app is enabled and who has something
- * to plan or review; per-user work is bounded (calendars with nothing to do are
+ * it reconciles every user for whom the app is enabled (and CalPlan is not) and
+ * who has something to plan or review; per-user work is bounded (calendars with nothing to do are
  * skipped inside ReconcileService).
  */
 
@@ -42,7 +42,7 @@ class ReconcileJob extends TimedJob {
 	protected function run($argument): void {
 		$this->userManager->callForSeenUsers(function (IUser $user): void {
 			$uid = $user->getUID();
-			if (!$this->appManager->isEnabledForUser(Application::APP_ID, $user)) {
+			if (!Application::isActiveFor($this->appManager, $user)) {
 				return;
 			}
 			// A user whose last reconcile had no task to schedule and no block

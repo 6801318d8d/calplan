@@ -26,11 +26,24 @@ use OCP\Calendar\Events\CalendarObjectMovedEvent;
 use OCP\Calendar\Events\CalendarObjectMovedToTrashEvent;
 use OCP\Calendar\Events\CalendarObjectRestoredEvent;
 use OCP\Calendar\Events\CalendarObjectUpdatedEvent;
+use OCP\IUser;
 use OCP\IUserSession;
 use OCP\User\Events\UserDeletedEvent;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'supercalplan';
+	/**
+	 * CalPlan, the app SuperCalPlan is a fork of. It writes the same blocks
+	 * (UIDs calplan-<task uid>), so the two would undo each other's plans:
+	 * SuperCalPlan stays idle for a user CalPlan is enabled for.
+	 */
+	public const CALPLAN_APP_ID = 'calplan';
+
+	/** Whether SuperCalPlan plans for *user*: enabled for them, and CalPlan is not. */
+	public static function isActiveFor(IAppManager $appManager, IUser $user): bool {
+		return $appManager->isEnabledForUser(self::APP_ID, $user)
+			&& !$appManager->isEnabledForUser(self::CALPLAN_APP_ID, $user);
+	}
 
 	public function __construct(array $urlParams = []) {
 		parent::__construct(self::APP_ID, $urlParams);
@@ -79,7 +92,7 @@ class Application extends App implements IBootstrap {
 		}
 		$context->injectFn(function (IUserSession $session, IAppManager $appManager): void {
 			$user = $session->getUser();
-			if ($user === null || !$appManager->isEnabledForUser(self::APP_ID, $user)) {
+			if ($user === null || !self::isActiveFor($appManager, $user)) {
 				return;
 			}
 			\OCP\Util::addScript(self::APP_ID, 'supercalplan-tasks');

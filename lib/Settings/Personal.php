@@ -14,6 +14,7 @@ use OCA\SuperCalPlan\Model\Defaults;
 use OCA\SuperCalPlan\Service\ConfigService;
 use OCA\SuperCalPlan\Service\CalendarRepository;
 use OCA\SuperCalPlan\Service\WorkingHoursService;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
@@ -24,6 +25,7 @@ class Personal implements ISettings {
 		private ConfigService $config,
 		private IUserSession $userSession,
 		private CalendarRepository $calendars,
+		private IAppManager $appManager,
 	) {
 	}
 
@@ -62,6 +64,8 @@ class Personal implements ISettings {
 			$this->config->getBehavioralHistorySettings($uid),
 			$this->config->getExclusionSettings($uid),
 			['reconcileDiagnostics' => $this->config->getReconcileDiagnostics($uid)],
+			// CalPlan writes the same blocks: SuperCalPlan stays idle while it is enabled.
+			['calplanEnabled' => $user !== null && $this->appManager->isEnabledForUser(Application::CALPLAN_APP_ID, $user)],
 			['calendarOptions' => $calendarOptions],
 			[
 				'workingHours' => WorkingHoursService::toMap($this->config->getWorkingHours($uid)),
