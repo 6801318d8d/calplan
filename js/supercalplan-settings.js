@@ -8,18 +8,18 @@
 	/** Nextcloud's t() for this app, placeholders filled unescaped (used with textContent). */
 	function t(text, vars) {
 		try {
-			if (typeof window.t === 'function') return window.t('calplan', text, vars || {}, undefined, { escape: false })
+			if (typeof window.t === 'function') return window.t('supercalplan', text, vars || {}, undefined, { escape: false })
 		} catch (e) {}
 		return String(text).replace(/\{(\w+)\}/g, function (match, key) { return vars && key in vars ? String(vars[key]) : match })
 	}
 
-	/** The URL of CalPlan's OCS API *path*, webroot-aware and working without URL rewriting. */
+	/** The URL of SuperCalPlan's OCS API *path*, webroot-aware and working without URL rewriting. */
 	function apiUrl(path) {
 		var base = ''
 		try {
-			if (window.OC && typeof OC.linkToOCS === 'function') base = OC.linkToOCS('apps/calplan/api/v1', 2)
+			if (window.OC && typeof OC.linkToOCS === 'function') base = OC.linkToOCS('apps/supercalplan/api/v1', 2)
 		} catch (e) {}
-		if (!base) base = ((window.OC && OC.webroot) || '') + '/ocs/v2.php/apps/calplan/api/v1/'
+		if (!base) base = ((window.OC && OC.webroot) || '') + '/ocs/v2.php/apps/supercalplan/api/v1/'
 		return base.replace(/\/+$/, '') + path
 	}
 
@@ -259,7 +259,7 @@
 					: t('Saved and re-planned: {placed} blocks added or moved, {removed} removed', { placed: data.placed || 0, removed: data.removed || 0 })
 						+ (data.unscheduled ? t(', {count} could not fit', { count: data.unscheduled }) : '') + '.'
 			}, function () {
-				statusEl.textContent = t('Saved. Re-planning failed: use Reconcile CalPlan in Tasks or Calendar.')
+				statusEl.textContent = t('Saved. Re-planning failed: use Reconcile SuperCalPlan in Tasks or Calendar.')
 			})
 		}
 
@@ -300,7 +300,7 @@
 		})
 
 		deleteHistory.addEventListener('click', function () {
-			if (!window.confirm(t('Delete all CalPlan scheduling history? This cannot be undone.'))) return
+			if (!window.confirm(t('Delete all SuperCalPlan scheduling history? This cannot be undone.'))) return
 			deleteHistory.disabled = true
 			historyStatus.textContent = t('Deleting…')
 			historyRequest('', 'DELETE').then(function () {

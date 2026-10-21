@@ -14,11 +14,11 @@ declare(strict_types=1);
  * busy time. One reconcile per user runs at a time.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Reconciliation;
-use OCA\AutoSchedule\Model\Task;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Model\Reconciliation;
+use OCA\SuperCalPlan\Model\Task;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
@@ -58,14 +58,14 @@ class ReconcileService {
 	 */
 	public function reconcileUser(string $userId, bool $processReview = true, string $trigger = 'other', int $lockWaitSeconds = self::LOCK_WAIT_SECONDS): array {
 		$this->lastReport = null;
-		$lock = 'calplan/reconcile/' . $userId;
+		$lock = 'supercalplan/reconcile/' . $userId;
 		if (!$this->acquireLock($lock, $lockWaitSeconds)) {
-			$this->logger->info('CalPlan skipped a reconcile for {user}: another one is still running', ['app' => 'calplan', 'user' => $userId]);
+			$this->logger->info('SuperCalPlan skipped a reconcile for {user}: another one is still running', ['app' => 'supercalplan', 'user' => $userId]);
 			return [];
 		}
 		// A run that waited for another one must see what that one stored.
 		$this->config->reload($userId);
-		// CalPlan's own writes below re-dispatch calendar events; the listener
+		// SuperCalPlan's own writes below re-dispatch calendar events; the listener
 		// must not re-plan for them.
 		ReconcileRunGuard::enter();
 		try {
@@ -83,7 +83,7 @@ class ReconcileService {
 		$deadline = microtime(true) + max(0, $waitSeconds);
 		while (true) {
 			try {
-				$this->locking->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE, 'CalPlan reconcile');
+				$this->locking->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE, 'SuperCalPlan reconcile');
 				return true;
 			} catch (LockedException $_) {
 				if (microtime(true) >= $deadline) {
@@ -98,7 +98,7 @@ class ReconcileService {
 		try {
 			$this->locking?->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
 		} catch (\Throwable $e) {
-			$this->logger->warning('CalPlan could not release its reconcile lock', ['app' => 'calplan', 'exception' => $e]);
+			$this->logger->warning('SuperCalPlan could not release its reconcile lock', ['app' => 'supercalplan', 'exception' => $e]);
 		}
 	}
 
@@ -343,7 +343,7 @@ class ReconcileService {
 		try {
 			$this->config->addSpentToday($userId, $today, $spent);
 		} catch (\Throwable $e) {
-			$this->logger->warning('CalPlan could not remember the time spent today', ['app' => 'calplan', 'exception' => $e]);
+			$this->logger->warning('SuperCalPlan could not remember the time spent today', ['app' => 'supercalplan', 'exception' => $e]);
 		}
 
 		// Lets the event-change listener and cron skip users with nothing to plan.
@@ -397,8 +397,8 @@ class ReconcileService {
 		}
 
 		if ($this->config->isPerformanceLoggingEnabled()) {
-			$this->logger->info('CalPlan reconcile metrics', [
-				'app' => 'calplan',
+			$this->logger->info('SuperCalPlan reconcile metrics', [
+				'app' => 'supercalplan',
 				'user' => $userId,
 				'calendars' => count($sources),
 				'events' => count($allEvents),
@@ -454,8 +454,8 @@ class ReconcileService {
 			$rewritten[(string)$task->id] = (string)$task->objectUri;
 			return $task->withCategories($categories);
 		} catch (\Throwable $e) {
-			$this->logger->warning('CalPlan could not update task review categories', [
-				'app' => 'calplan',
+			$this->logger->warning('SuperCalPlan could not update task review categories', [
+				'app' => 'supercalplan',
 				'exception' => $e,
 			]);
 			return $task;
@@ -557,7 +557,7 @@ class ReconcileService {
 				$this->repo->putSlot($calendarId, $task, $slot, $now, $part, $partCount, $recon->objectUris[$key] ?? null);
 			} catch (\Throwable $e) {
 				$putFailures++;
-				$this->logger->warning('CalPlan could not write a block', ['app' => 'calplan', 'exception' => $e]);
+				$this->logger->warning('SuperCalPlan could not write a block', ['app' => 'supercalplan', 'exception' => $e]);
 				continue;
 			}
 			$done[$key] = true;
@@ -577,7 +577,7 @@ class ReconcileService {
 				$this->repo->deleteSlot($calendarId, $recon->objectUris[$slotKey] ?? CalendarRepository::slotObjectUri($slotKey));
 			} catch (\Throwable $e) {
 				$deleteFailures++;
-				$this->logger->warning('CalPlan could not remove a block', ['app' => 'calplan', 'exception' => $e]);
+				$this->logger->warning('SuperCalPlan could not remove a block', ['app' => 'supercalplan', 'exception' => $e]);
 				continue;
 			}
 			$done[$slotKey] = true;

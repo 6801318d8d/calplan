@@ -11,8 +11,8 @@ declare(strict_types=1);
  * tests/. The IcalCodec tests skip themselves if Sabre\VObject is absent.
  */
 
-$testPrefix = 'OCA\\AutoSchedule\\Tests\\';
-$libPrefix = 'OCA\\AutoSchedule\\';
+$testPrefix = 'OCA\\SuperCalPlan\\Tests\\';
+$libPrefix = 'OCA\\SuperCalPlan\\';
 
 spl_autoload_register(function (string $class) use ($testPrefix, $libPrefix): void {
 	if (strncmp($class, $testPrefix, strlen($testPrefix)) === 0) {

@@ -24,16 +24,16 @@ declare(strict_types=1);
  *    calendar-data, for efficiency).
  *  - getMultipleCalendarObjects($calendarId, $uris, $type): rows incl. 'calendardata'.
  *  - createCalendarObject / updateCalendarObject / deleteCalendarObject.
- *    These skip the CalDAV server's ACL and component checks, so CalPlan
+ *    These skip the CalDAV server's ACL and component checks, so SuperCalPlan
  *    itself writes only to calendars the user owns and that hold events.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\Task;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\Task;
 use OCA\DAV\CalDAV\CalDavBackend;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Settings;
@@ -78,7 +78,7 @@ class CalendarRepository {
 
 	/**
 	 * Calendars the user subscribed to (webcal/ICS) or accepted from another
-	 * server. CalPlan only reads their events as busy time.
+	 * server. SuperCalPlan only reads their events as busy time.
 	 *
 	 * @return array<string, array{id: string, name: string, type: int}> keyed by a settings key ("subscription:<uri>", "federated:<uri>")
 	 */
@@ -99,7 +99,7 @@ class CalendarRepository {
 					}
 				}
 			} catch (\Throwable $e) {
-				$this->logger->warning('CalPlan could not list federated calendars', ['app' => 'calplan', 'exception' => $e]);
+				$this->logger->warning('SuperCalPlan could not list federated calendars', ['app' => 'supercalplan', 'exception' => $e]);
 			}
 		}
 		return $out;
@@ -107,8 +107,8 @@ class CalendarRepository {
 
 	/**
 	 * Whether *principalUri* owns *calendar*. A calendar another user shared
-	 * (read-only or not) is never planned or written by the sharee's CalPlan:
-	 * the owner's CalPlan plans it, and the sharee only sees its events as busy.
+	 * (read-only or not) is never planned or written by the sharee's SuperCalPlan:
+	 * the owner's SuperCalPlan plans it, and the sharee only sees its events as busy.
 	 *
 	 * @param array<string,mixed> $calendar
 	 */
@@ -150,7 +150,7 @@ class CalendarRepository {
 			try {
 				$parsed = IcalCodec::parseTasks($ics, $defaultEstimateMinutes, $tz);
 			} catch (\Throwable $e) {
-				$this->logger->warning('CalPlan skipped a task it cannot read: {uri}', ['app' => 'calplan', 'uri' => $objectUri, 'exception' => $e]);
+				$this->logger->warning('SuperCalPlan skipped a task it cannot read: {uri}', ['app' => 'supercalplan', 'uri' => $objectUri, 'exception' => $e]);
 				continue;
 			}
 			foreach ($parsed as $t) {
@@ -162,7 +162,7 @@ class CalendarRepository {
 
 	/**
 	 * Read VEVENTs overlapping the requested scheduling window, plus (for the
-	 * user's own calendars) every owned CalPlan slot, including stale slots
+	 * user's own calendars) every owned SuperCalPlan slot, including stale slots
 	 * outside the window so cleanup still works. CalDavBackend::calendarQuery
 	 * uses denormalized first/last occurrence columns and handles
 	 * recurring-event overlap before returning object URIs. An event that
@@ -216,7 +216,7 @@ class CalendarRepository {
 					$events[] = $event;
 				}
 			} catch (\Throwable $e) {
-				$this->logger->warning('CalPlan skipped an event it cannot read: {uri}', ['app' => 'calplan', 'uri' => $uri, 'exception' => $e]);
+				$this->logger->warning('SuperCalPlan skipped an event it cannot read: {uri}', ['app' => 'supercalplan', 'uri' => $uri, 'exception' => $e]);
 			}
 		}
 		return $events;
@@ -248,7 +248,7 @@ class CalendarRepository {
 	/**
 	 * Create or update the working-slot VEVENT for *task*, or for one part of
 	 * it when split. An existing block is updated at *objectUri*, where it is
-	 * stored (an imported block may not use CalPlan's file name).
+	 * stored (an imported block may not use SuperCalPlan's file name).
 	 */
 	public function putSlot(string $calendarId, Task $task, Slot $slot, ?\DateTimeImmutable $now = null, ?int $part = null, ?int $partCount = null, ?string $objectUri = null): void {
 		$ics = IcalCodec::buildSlotEvent($task, $slot->start, $slot->end, $now, $part, $partCount);
@@ -272,7 +272,7 @@ class CalendarRepository {
 		$this->backend->deleteCalendarObject($calendarId, $objectUri, CalDavBackend::CALENDAR_TYPE_CALENDAR, true);
 	}
 
-	/** The object URI CalPlan gives the block with key *slotKey* ("<task uid>" or "<task uid>~p<n>"). */
+	/** The object URI SuperCalPlan gives the block with key *slotKey* ("<task uid>" or "<task uid>~p<n>"). */
 	public static function slotObjectUri(string $slotKey): string {
 		return Defaults::SLOT_UID_PREFIX . $slotKey . '.ics';
 	}

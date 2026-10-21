@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
 use Psr\Log\LoggerInterface;
 
@@ -53,8 +53,8 @@ final class DeferredReplans {
 				$this->reconcileService->reconcileUser($userId, false, $trigger);
 			} catch (\Throwable $e) {
 				// Best-effort: the next cron pass or Reconcile recovers.
-				$this->logger->error('CalPlan: re-plan after a calendar change for {user} failed: {msg}', [
-					'app' => 'calplan',
+				$this->logger->error('SuperCalPlan: re-plan after a calendar change for {user} failed: {msg}', [
+					'app' => 'supercalplan',
 					'user' => $userId,
 					'msg' => $e->getMessage(),
 					'exception' => $e,

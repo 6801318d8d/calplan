@@ -1,4 +1,4 @@
-# CalPlan — Roadmap / TODO
+# SuperCalPlan — Roadmap / TODO
 
 > Public roadmap, grounded in the Tasks/Calendar source. Status as of
 > **0.9.11** (2026-08-24).
@@ -18,7 +18,7 @@ feature scope.
 
 ## Release blockers / hardening
 
-- **Personal settings — core done** — `/settings/user/calplan` controls the daily
+- **Personal settings — core done** — `/settings/user/supercalplan` controls the daily
   task-time cap, fallback task duration, pacing preset, task-to-task recovery
   gap, buffer around real calendar events, complete calendar exclusions, and
   case-insensitive exact/contains busy-event title exclusions. Presets populate
@@ -28,12 +28,12 @@ feature scope.
   large, or no working hours. Next: expose event-incompatible calendar and slot
   write-failure reasons at the orchestration layer and show per-task details.
 - **Operator diagnostics switch — done** — privacy-safe reconcile timings are gated behind
-  the standard `occ config:app:set calplan performance_logging ...` app setting;
+  the standard `occ config:app:set supercalplan performance_logging ...` app setting;
   disabled by default and separate from personal behavioral-history consent.
 - **Non-blocking reconcile** — VTODO and ordinary VEVENT changes re-plan once
   per user at the end of the save request (DeferredReplans), outside the
   CalDAV write transaction, so blocks move the moment an event is saved, from
-  any client. The listener skips CalPlan's own blocks, ignored calendars,
+  any client. The listener skips SuperCalPlan's own blocks, ignored calendars,
   transparent or out-of-window events, users with nothing to plan
   (`plan_active`) and held re-plans; a re-plan takes ~0.1–0.3 s for one user.
   Next at scale: a queue that also merges re-plans of separate requests (one
@@ -44,7 +44,7 @@ feature scope.
 
 ## Beta usability and observability
 
-- **Reconcile CalPlan — done:** the action is at the top of Tasks navigation,
+- **Reconcile SuperCalPlan — done:** the action is at the top of Tasks navigation,
   above smart collections and calendar lists.
 - **Phase X observation history — first slice done:** separate explicit per-user opt-in,
   privacy-minimal monthly JSONL segments in appdata, bounded retention, export,
@@ -56,7 +56,7 @@ feature scope.
   CalDAV clients. Do not implicitly complete a task by deleting its derived
   event.
 - Later drag-and-pin placement must use a reconciler placement snapshot to tell
-  user moves from CalPlan's own writes; a valid pin is respected only while it
+  user moves from SuperCalPlan's own writes; a valid pin is respected only while it
   satisfies hard DTSTART/DUE and conflict constraints.
 
 ## Phase 2 — deferred scale & features
@@ -72,7 +72,7 @@ feature scope.
 - **2.1** — habit modality (a distinct visual — sine/wiggly — for auto-scheduled
   regular blocks).
 - **2.2** — subtasks increase the parent's time block (roll up child `DURATION`s).
-- **2.3** — Calendar "Unscheduled tasks" sidebar reflects CalPlan's actual
+- **2.3** — Calendar "Unscheduled tasks" sidebar reflects SuperCalPlan's actual
   schedule (filter scheduled tasks out).
 - **2.4** — Calendar-frontend runtime injection: drag-prevention on `calplan-slot`
   events, a lock icon, "Due:" + bold/red urgency styling. (Never a Calendar
@@ -83,7 +83,7 @@ feature scope.
   recurrence-aware). Do not treat deleting the derived event as completion. The
   0.9.6 DESCRIPTION deep-link variant was cut pre-release.
 - **2.6 — done in 0.9.11** — per-user **maximum task blocks per day**, separate from the existing
-  maximum task minutes per day. Unlimited by default. Each CalPlan-managed block
+  maximum task minutes per day. Unlimited by default. Each SuperCalPlan-managed block
   counts once on the user's local day where it starts; the count is shared across
   calendars, and remaining tasks roll to later eligible days without relaxing
   DTSTART/DUE. `daily_task_count_reached` explains a blocked rollover. Recurring
@@ -92,7 +92,7 @@ feature scope.
   schedule all tasks, schedule no tasks, deny tasks matching selected tags, or
   allow only tasks matching selected tags. Start with standard task tags and
   match any selected tag. A later advanced layer may accept intentional notes
-  directives such as `CalPlan exclude: Friday` and `CalPlan only: Tuesday,
+  directives such as `SuperCalPlan exclude: Friday` and `SuperCalPlan only: Tuesday,
   Thursday`; do not fuzzy-match arbitrary notes text. These rules restrict slot
   eligibility rather than skipping reconciliation, so existing violating slots
   move/remove and an unscheduled task receives a typed reason such as
@@ -141,7 +141,7 @@ DTSTART, the daily cap, real busy, and working hours.
   lives in ordinary Nextcloud app settings (`OCP\IConfig` user values; the
   **Tunable** knobs below). JSON/JSONL, no DB schema, no composer deps (TOML
   rejected: no native PHP parser, and a vendor dep would break the vendorless
-  store package). The model is CalPlan-internal state, never written onto the
+  store package). The model is SuperCalPlan-internal state, never written onto the
   user's tasks or slots (mirrors the "no custom `X-` iCal props" stance). Human
   readability / transparency / portability come from an on-demand **"Export my
   model"** snapshot of profile + history into your Files (plus an optional

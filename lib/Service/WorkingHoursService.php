@@ -11,10 +11,10 @@ declare(strict_types=1);
  * no I/O.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\WorkingDay;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\Model\WorkingDay;
+use OCA\SuperCalPlan\Model\WorkingHours;
 use Sabre\VObject\Reader;
 
 class WorkingHoursService {
@@ -48,7 +48,7 @@ class WorkingHoursService {
 
 	/**
 	 * Working hours from Nextcloud's availability (a VAVAILABILITY with one
-	 * weekly AVAILABLE per time slot). CalPlan keeps one window per weekday:
+	 * weekly AVAILABLE per time slot). SuperCalPlan keeps one window per weekday:
 	 * from the first slot's start to the last slot's end. Null when the
 	 * availability has no usable slot.
 	 *

@@ -12,11 +12,11 @@ declare(strict_types=1);
  * skipped inside ReconcileService).
  */
 
-namespace OCA\AutoSchedule\BackgroundJob;
+namespace OCA\SuperCalPlan\BackgroundJob;
 
-use OCA\AutoSchedule\AppInfo\Application;
-use OCA\AutoSchedule\Service\ConfigService;
-use OCA\AutoSchedule\Service\ReconcileService;
+use OCA\SuperCalPlan\AppInfo\Application;
+use OCA\SuperCalPlan\Service\ConfigService;
+use OCA\SuperCalPlan\Service\ReconcileService;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
@@ -62,7 +62,7 @@ class ReconcileJob extends TimedJob {
 					$this->configService->markReviewChecked($uid, $now);
 				}
 			} catch (\Throwable $e) {
-				$this->logger->error('CalPlan reconcile failed for user ' . $uid . ': ' . $e->getMessage(), [
+				$this->logger->error('SuperCalPlan reconcile failed for user ' . $uid . ': ' . $e->getMessage(), [
 					'exception' => $e,
 				]);
 			}

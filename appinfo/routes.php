@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * OCS routes for calplan. Mounted under
- * /ocs/v2.php/apps/calplan/<url>. The controller class name is used in
+ * /ocs/v2.php/apps/supercalplan/<url>. The controller class name is used in
  * the route "name" without the "Controller" suffix (Config#method), matching
  * the Nextcloud convention (see e.g. provisioning_api's routes.php).
  */

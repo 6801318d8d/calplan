@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Model;
+namespace OCA\SuperCalPlan\Model;
 
 /**
  * Tunable defaults (ADHD-friendly) + the priority→weight map + the well-known
@@ -55,7 +55,7 @@ class Defaults {
 	public const DAILY_MAX_BLOCKS_PROP = 'X-CALPLAN-DAILY-MAX-BLOCKS';
 
 	/**
-	 * VTODO flag (TRUE) letting CalPlan split the task and all its subtasks
+	 * VTODO flag (TRUE) letting SuperCalPlan split the task and all its subtasks
 	 * into parts when it cannot be placed in one block; parts are at least the
 	 * user's minimum part (MIN_PART_MINUTES by default; a shorter task stays whole).
 	 */

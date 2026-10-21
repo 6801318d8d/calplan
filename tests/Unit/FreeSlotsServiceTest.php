@@ -7,15 +7,15 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Service\FreeSlotsService;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Service\FreeSlotsService;
 
 class FreeSlotsServiceTest extends AutoScheduleTestCase {
 	public function testFreeSlotsStayInTheWindowsTimezoneWhereUtcBusyCutsThem(): void {
 		$sydney = new \DateTimeZone('Australia/Sydney');
-		$window = new \OCA\AutoSchedule\Model\Slot(
+		$window = new \OCA\SuperCalPlan\Model\Slot(
 			new \DateTimeImmutable('2026-08-20 09:00:00', $sydney),
 			new \DateTimeImmutable('2026-08-20 17:00:00', $sydney),
 		);
@@ -75,7 +75,7 @@ class FreeSlotsServiceTest extends AutoScheduleTestCase {
 	}
 
 	public function testAReversedBusyBlockHoldsNoTime(): void {
-		$window = new \OCA\AutoSchedule\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 17:00:00'));
+		$window = new \OCA\SuperCalPlan\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 17:00:00'));
 		$reversed = new BusyBlock($this->utc('2026-08-19 10:00:00'), $this->utc('2026-08-19 09:30:00'));
 		$this->assertCount(1, FreeSlotsService::subtractBusy($window, [$reversed]));
 	}

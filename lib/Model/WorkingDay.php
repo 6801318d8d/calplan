@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Model;
+namespace OCA\SuperCalPlan\Model;
 
 /**
  * Working hours for one weekday (0 = Monday … 6 = Sunday), stored as minutes

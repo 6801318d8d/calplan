@@ -19,7 +19,7 @@ declare(strict_types=1);
  * - VEVENT changes: an ordinary event changes busy time, so blocks move at once
  *   instead of at the next cron pass.
  *
- * Skipped: CalPlan's own writes and blocks, users the app is not enabled for,
+ * Skipped: SuperCalPlan's own writes and blocks, users the app is not enabled for,
  * users whose last reconcile had nothing to plan (ConfigService::isPlanActive;
  * for a task, unless it carries `calplan`), users whose client holds the
  * re-plans back while it writes many tasks (ConfigService::holdReplans), the
@@ -27,14 +27,14 @@ declare(strict_types=1);
  * transparent or outside the planning window.
  */
 
-namespace OCA\AutoSchedule\Listener;
+namespace OCA\SuperCalPlan\Listener;
 
-use OCA\AutoSchedule\AppInfo\Application;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Service\ConfigService;
-use OCA\AutoSchedule\Service\DeferredReplans;
-use OCA\AutoSchedule\Service\IcalCodec;
-use OCA\AutoSchedule\Service\ReconcileRunGuard;
+use OCA\SuperCalPlan\AppInfo\Application;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Service\ConfigService;
+use OCA\SuperCalPlan\Service\DeferredReplans;
+use OCA\SuperCalPlan\Service\IcalCodec;
+use OCA\SuperCalPlan\Service\ReconcileRunGuard;
 use OCP\App\IAppManager;
 use OCP\Calendar\Events\AbstractCalendarObjectEvent;
 use OCP\Calendar\Events\CalendarObjectDeletedEvent;
@@ -62,7 +62,7 @@ class CalendarObjectChangeListener implements IEventListener {
 
 	public function handle(Event $event): void {
 		if (ReconcileRunGuard::isActive()) {
-			return; // CalPlan's own writes
+			return; // SuperCalPlan's own writes
 		}
 
 		// CalendarObjectMovedEvent is not an AbstractCalendarObjectEvent. A move
@@ -91,7 +91,7 @@ class CalendarObjectChangeListener implements IEventListener {
 			$trigger = 'task_change';
 		} elseif (str_contains($component, 'VEVENT') || ($component === '' && stripos($raw, 'BEGIN:VEVENT') !== false)) {
 			if (str_starts_with((string)($objectData['uri'] ?? ''), Defaults::SLOT_UID_PREFIX)) {
-				return; // a CalPlan block
+				return; // a SuperCalPlan block
 			}
 			$trigger = 'event_change';
 		} else {
@@ -106,7 +106,7 @@ class CalendarObjectChangeListener implements IEventListener {
 			if ($owner === null || $uri === self::BIRTHDAY_CALENDAR_URI) {
 				continue;
 			}
-			// CalPlan neither reads nor writes ignored calendars: a change only
+			// SuperCalPlan neither reads nor writes ignored calendars: a change only
 			// there needs no re-plan. A sharee knows the calendar under
 			// "<uri>_shared_by_<owner>".
 			if (!in_array($uri, $this->config->getIgnoredCalendars($owner), true)) {

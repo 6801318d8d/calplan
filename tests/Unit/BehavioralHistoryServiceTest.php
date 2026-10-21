@@ -7,9 +7,9 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Service\BehavioralHistoryService;
+use OCA\SuperCalPlan\Service\BehavioralHistoryService;
 use PHPUnit\Framework\TestCase;
 
 class BehavioralHistoryServiceTest extends TestCase {

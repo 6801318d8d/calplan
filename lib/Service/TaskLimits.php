@@ -7,9 +7,9 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\Task;
+use OCA\SuperCalPlan\Model\Task;
 
 /**
  * A task tree is planned as a whole. Settings set on a task apply to the task

@@ -7,11 +7,11 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Service\SchedulerService;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Service\SchedulerService;
 
 class SchedulerServiceTest extends AutoScheduleTestCase {
 	private SchedulerService $scheduler;
@@ -598,12 +598,12 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 	}
 
 	/** Every day from *start* to *end* (minutes after midnight). */
-	private function hours(int $start, int $end, int $days = 7): \OCA\AutoSchedule\Model\WorkingHours {
+	private function hours(int $start, int $end, int $days = 7): \OCA\SuperCalPlan\Model\WorkingHours {
 		$out = [];
 		for ($w = 0; $w < $days; $w++) {
-			$out[] = new \OCA\AutoSchedule\Model\WorkingDay($w, $start, $end);
+			$out[] = new \OCA\SuperCalPlan\Model\WorkingDay($w, $start, $end);
 		}
-		return new \OCA\AutoSchedule\Model\WorkingHours($out);
+		return new \OCA\SuperCalPlan\Model\WorkingHours($out);
 	}
 
 	public function testTheDailyCapHoldsWhenADtstartIsInUtc(): void {
@@ -769,7 +769,7 @@ class SchedulerServiceTest extends AutoScheduleTestCase {
 
 	public function testStartedBlocksHoldTheirTimeAndCount(): void {
 		$now = $this->utc('2026-08-19 09:20:00');
-		$pinned = ['A' => [new \OCA\AutoSchedule\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'))]];
+		$pinned = ['A' => [new \OCA\SuperCalPlan\Model\Slot($this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 10:00:00'))]];
 		$outcomes = $this->scheduler->scheduleDetailed([$this->task('A', estimatedMinutes: 60), $this->task('B', estimatedMinutes: 60)], $this->allWeek(), [], $now,
 			dailyTaskCount: 1, pinned: $pinned);
 		$this->assertSame(['08-19 09:00-10:00'], $this->blocksOf($outcomes, 'A'));

@@ -7,9 +7,9 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Service\WorkingHoursService;
+use OCA\SuperCalPlan\Service\WorkingHoursService;
 
 class WorkingHoursServiceTest extends AutoScheduleTestCase {
 

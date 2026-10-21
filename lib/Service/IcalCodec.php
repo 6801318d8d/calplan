@@ -15,11 +15,11 @@ declare(strict_types=1);
  * task, X-CALPLAN-PART.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\Task;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\Task;
 use Sabre\VObject\Component;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\DateTimeParser;
@@ -478,7 +478,7 @@ class IcalCodec {
 	public static function buildSlotEvent(Task $task, \DateTimeImmutable $start, \DateTimeImmutable $end, ?\DateTimeImmutable $now = null, ?int $part = null, ?int $partCount = null): string {
 		$utc = new \DateTimeZone('UTC');
 		$vcal = new VCalendar();
-		$vcal->PRODID = '-//Nextcloud//CalPlan//EN';
+		$vcal->PRODID = '-//Nextcloud//SuperCalPlan//EN';
 		$vevent = $vcal->createComponent('VEVENT');
 		$vevent->UID = Defaults::SLOT_UID_PREFIX . self::slotKey($task->id, $part);
 		if ($part !== null && $partCount !== null) {

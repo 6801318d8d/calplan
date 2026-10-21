@@ -7,10 +7,10 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Service\IcalCodec;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Service\IcalCodec;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -109,7 +109,7 @@ class IcalCodecTest extends TestCase {
 
 	public function testPartBlockRoundTrip(): void {
 		$this->requireSabre();
-		$task = new \OCA\AutoSchedule\Model\Task('task-1', 'Do a thing', estimatedMinutes: 120, autoSchedule: true);
+		$task = new \OCA\SuperCalPlan\Model\Task('task-1', 'Do a thing', estimatedMinutes: 120, autoSchedule: true);
 		$start = new \DateTimeImmutable('2026-08-20 09:00:00', new \DateTimeZone('UTC'));
 		$end = new \DateTimeImmutable('2026-08-20 10:00:00', new \DateTimeZone('UTC'));
 		$ics = IcalCodec::buildSlotEvent($task, $start, $end, $start, 2, 3);
@@ -163,7 +163,7 @@ class IcalCodecTest extends TestCase {
 
 	public function testBuildSlotEventMirrorsContent(): void {
 		$this->requireSabre();
-		$task = new \OCA\AutoSchedule\Model\Task(
+		$task = new \OCA\SuperCalPlan\Model\Task(
 			'task-1', 'Do a thing', 3, null, null, 45, true, 'NEEDS-ACTION',
 			'notes', 'Desk', 'https://ex.test/t', 60
 		);
@@ -180,7 +180,7 @@ class IcalCodecTest extends TestCase {
 
 	public function testParseEventsReadsBackMirroredSlotContent(): void {
 		$this->requireSabre();
-		$task = new \OCA\AutoSchedule\Model\Task(
+		$task = new \OCA\SuperCalPlan\Model\Task(
 			'task-1', 'Do a thing', 3, null, null, 45, true, 'NEEDS-ACTION',
 			'notes', 'Desk', 'https://ex.test/t', 60
 		);
@@ -332,7 +332,7 @@ class IcalCodecTest extends TestCase {
 	public function testABlockRoundTripsUnchanged(): void {
 		$this->requireSabre();
 		$now = new \DateTimeImmutable('2026-08-19 08:00:00', new \DateTimeZone('UTC'));
-		$task = new \OCA\AutoSchedule\Model\Task(id: 'T', title: 'Visit', priority: 3, url: 'https://en.wikipedia.org/wiki/Washington,_D.C.',
+		$task = new \OCA\SuperCalPlan\Model\Task(id: 'T', title: 'Visit', priority: 3, url: 'https://en.wikipedia.org/wiki/Washington,_D.C.',
 			location: '0', description: "line one\r\nline two", classification: 'PRIVATE');
 		$ics = IcalCodec::buildSlotEvent($task, $now->modify('+1 hour'), $now->modify('+2 hours'), $now);
 		$this->assertStringContainsString("CLASS:PRIVATE\r\n", $ics);

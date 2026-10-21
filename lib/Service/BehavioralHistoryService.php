@@ -7,11 +7,11 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\AppInfo\Application;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\Task;
+use OCA\SuperCalPlan\AppInfo\Application;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\Task;
 use OCP\Files\AppData\IAppDataFactory;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
@@ -180,13 +180,13 @@ class BehavioralHistoryService {
 		$content = $lines === [] ? '' : implode("\n", $lines) . "\n";
 		$userFolder = $this->rootFolder->getUserFolder($userId);
 		try {
-			$exportFolder = $userFolder->get('CalPlan');
+			$exportFolder = $userFolder->get('SuperCalPlan');
 		} catch (NotFoundException $_) {
-			$exportFolder = $userFolder->newFolder('CalPlan');
+			$exportFolder = $userFolder->newFolder('SuperCalPlan');
 		}
 		$name = 'behavioral-history-' . gmdate('Ymd-His') . '.jsonl';
 		$exportFolder->newFile($name, $content);
-		return ['path' => 'CalPlan/' . $name, 'records' => $content === '' ? 0 : substr_count($content, "\n")];
+		return ['path' => 'SuperCalPlan/' . $name, 'records' => $content === '' ? 0 : substr_count($content, "\n")];
 	}
 
 	private function appendChanged(string $userId, string $taskUid, string $signature, array $record): void {

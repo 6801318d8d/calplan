@@ -12,12 +12,12 @@ declare(strict_types=1);
  * window. Pure: no I/O, deterministic.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\WorkingHours;
 
 class FreeSlotsService {
 	/** Round *dt* up to the next granularity boundary (10:07 → 10:15). */

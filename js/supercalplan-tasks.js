@@ -2,23 +2,23 @@
  * SPDX-FileCopyrightText: 2026 Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * CalPlan Tasks-frontend injection (runtime, no build step).
+ * SuperCalPlan Tasks-frontend injection (runtime, no build step).
  *
- * Loaded by OCA\AutoSchedule\AppInfo\Application::boot() via
- * OCP\Util::addScript('calplan', 'calplan-tasks'), for logged-in users the
- * app is enabled for. If calplan is disabled, nothing loads and the Tasks app
+ * Loaded by OCA\SuperCalPlan\AppInfo\Application::boot() via
+ * OCP\Util::addScript('supercalplan', 'supercalplan-tasks'), for logged-in users the
+ * app is enabled for. If SuperCalPlan is disabled, nothing loads and the Tasks app
  * is unchanged (the `calplan` category degrades to a plain text tag in CalDAV
  * clients). Nothing breaks.
  *
  * What it does, only on the Tasks and Calendar app routes:
- *   1. Both apps — adds the Reconcile CalPlan navigation action and shared
+ *   1. Both apps — adds the Reconcile SuperCalPlan navigation action and shared
  *      help; in Calendar, refreshes the view when an edit re-planned blocks.
  *
  * Tasks-only behavior:
- *   2. Task list — renders a small SVG "CalPlan" icon next to any task that
+ *   2. Task list — renders a small SVG "SuperCalPlan" icon next to any task that
  *      carries the `calplan` category, read from the rendered tag chips, the
  *      time of its next block (for a parent whose subtasks get the blocks,
- *      theirs), and a warning icon next to tasks CalPlan could not schedule.
+ *      theirs), and a warning icon next to tasks SuperCalPlan could not schedule.
  *   3. Sidebar — injects an "Auto-schedule" switch after the "All day" row,
  *      bound to whether the open task has the `calplan` category, plus the
  *      Duration, Split if needed and Daily limit rows. Changes go through
@@ -37,7 +37,7 @@
 	// document.currentScript is only valid during synchronous execution.
 	var SCRIPT_SRC = ''
 	try { if (document.currentScript && document.currentScript.src) SCRIPT_SRC = document.currentScript.src } catch (e) {}
-	if (!SCRIPT_SRC) { var _s = document.querySelector('script[src*="calplan-tasks"]'); if (_s) SCRIPT_SRC = _s.src }
+	if (!SCRIPT_SRC) { var _s = document.querySelector('script[src*="supercalplan-tasks"]'); if (_s) SCRIPT_SRC = _s.src }
 
 	var FLAG = 'calplan'
 	var REVIEW_FLAG = 'calplan-review'
@@ -45,7 +45,7 @@
 	// (a minute earlier, in case the server's clock is behind).
 	var PAGE_LOADED_AT = Math.floor(Date.now() / 1000) - 60
 
-	/** Only Tasks and Calendar own the CalPlan navigation action (not Calendar's public pages). */
+	/** Only Tasks and Calendar own the SuperCalPlan navigation action (not Calendar's public pages). */
 	function isSupportedAppPath() {
 		var path = String(window.location && window.location.pathname || '')
 		return /\/(?:index\.php\/)?apps\/(?:tasks|calendar)(?:\/(?!p\/|embed\/|appointment\/)|$)/.test(path)
@@ -57,7 +57,7 @@
 
 	function warn() {
 		var a = Array.prototype.slice.call(arguments)
-		a.unshift('[CalPlan]')
+		a.unshift('[SuperCalPlan]')
 		try { console.warn.apply(console, a) } catch (e) {}
 	}
 
@@ -72,7 +72,7 @@
 	/** Nextcloud's t() for this app; placeholders are filled unescaped (callers use textContent or escape). */
 	function t(text, vars) {
 		try {
-			if (typeof window.t === 'function') return window.t('calplan', text, vars || {}, undefined, { escape: false })
+			if (typeof window.t === 'function') return window.t('supercalplan', text, vars || {}, undefined, { escape: false })
 		} catch (e) {}
 		return fill(text, vars)
 	}
@@ -81,7 +81,7 @@
 	function n(singular, plural, count, vars) {
 		var all = Object.assign({ count: count }, vars || {})
 		try {
-			if (typeof window.n === 'function') return window.n('calplan', singular, plural, count, all, { escape: false })
+			if (typeof window.n === 'function') return window.n('supercalplan', singular, plural, count, all, { escape: false })
 		} catch (e) {}
 		return fill(count === 1 ? singular : plural, all)
 	}
@@ -92,13 +92,13 @@
 		})
 	}
 
-	/** The URL of CalPlan's OCS API *path* ("/reconcile"), webroot-aware and working without URL rewriting. */
+	/** The URL of SuperCalPlan's OCS API *path* ("/reconcile"), webroot-aware and working without URL rewriting. */
 	function apiUrl(path) {
 		var base = ''
 		try {
-			if (window.OC && typeof OC.linkToOCS === 'function') base = OC.linkToOCS('apps/calplan/api/v1', 2)
+			if (window.OC && typeof OC.linkToOCS === 'function') base = OC.linkToOCS('apps/supercalplan/api/v1', 2)
 		} catch (e) {}
-		if (!base) base = ((window.OC && OC.webroot) || '') + '/ocs/v2.php/apps/calplan/api/v1/'
+		if (!base) base = ((window.OC && OC.webroot) || '') + '/ocs/v2.php/apps/supercalplan/api/v1/'
 		return base.replace(/\/+$/, '') + path
 	}
 
@@ -293,8 +293,8 @@
 
 	// --- 1. Task-list icon ------------------------------------------------
 	//
-	// The CalPlan badge/sidebar icons live as standalone SVG files in the
-	// app's img/ dir (calplan-task-icon.svg, calplan-sidebar-icon.svg) so the
+	// The SuperCalPlan badge/sidebar icons live as standalone SVG files in the
+	// app's img/ dir (supercalplan-task-icon.svg, supercalplan-sidebar-icon.svg) so the
 	// artwork is editable/viewable outside the JS and ships as app assets. They
 	// are fetched once at init and cached as inline markup, then injected via
 	// innerHTML so `fill="currentColor"` still follows the surrounding text
@@ -305,7 +305,7 @@
 	var iconSidebarSvg = ''
 
 	function imgBaseUrl() {
-		// ".../apps/calplan/js/calplan-tasks.js?v=..." -> ".../apps/calplan/img/"
+		// ".../apps/supercalplan/js/supercalplan-tasks.js?v=..." -> ".../apps/supercalplan/img/"
 		return SCRIPT_SRC ? SCRIPT_SRC.replace(/\/js\/.*$/, '/img/') : ''
 	}
 
@@ -324,8 +324,8 @@
 		var pending = 2, settled = false
 		function finish() { if (!settled) { settled = true; cb() } }
 		function one() { if (--pending === 0) finish() }
-		fetchIcon('calplan-task-icon.svg', function (svg) { iconTaskSvg = svg; one() })
-		fetchIcon('calplan-sidebar-icon.svg', function (svg) { iconSidebarSvg = svg; one() })
+		fetchIcon('supercalplan-task-icon.svg', function (svg) { iconTaskSvg = svg; one() })
+		fetchIcon('supercalplan-sidebar-icon.svg', function (svg) { iconSidebarSvg = svg; one() })
 		// Don't block the UI forever if an asset 404s.
 		setTimeout(finish, 3000)
 	}
@@ -380,7 +380,7 @@
 			warning.remove()
 		}
 
-		// When the row's next block is planned, after the CalPlan icon; for a
+		// When the row's next block is planned, after the SuperCalPlan icon; for a
 		// parent whose subtasks get the blocks (a course, a module), theirs.
 		var uri = body.getAttribute('task-id')
 		var planned = plannedByUri(uri)
@@ -475,7 +475,7 @@
 	}
 
 	/**
-	 * Tasks CalPlan rewrote on the server (the expired-block review) since
+	 * Tasks SuperCalPlan rewrote on the server (the expired-block review) since
 	 * this page loaded its copy: reload them, or their next save would be
 	 * refused as a conflict.
 	 */
@@ -801,7 +801,7 @@
 		button.className = 'calplan-reconcile-now'
 		button.innerHTML = '<span class="calplan-reconcile-icon" aria-hidden="true">↻</span><span class="calplan-reconcile-label"></span>'
 		var label = button.querySelector('.calplan-reconcile-label')
-		label.textContent = t('Reconcile CalPlan')
+		label.textContent = t('Reconcile SuperCalPlan')
 		button.addEventListener('click', function () {
 			if (reconcileRunning) return
 			reconcileRunning = true
@@ -810,7 +810,7 @@
 			label.textContent = t('Reconciling…')
 			triggerReconcile().then(function (data) {
 				if (data && data.ran === false) {
-					notify(t('CalPlan is still busy with another reconcile; try again in a moment.'), true)
+					notify(t('SuperCalPlan is still busy with another reconcile; try again in a moment.'), true)
 					return
 				}
 				var placed = (data && data.placed) || 0
@@ -818,15 +818,15 @@
 				var unscheduled = (data && data.unscheduled) || 0
 				if (placed > 0 || removed > 0) refreshCalendarApp()
 				notify(unscheduled > 0
-					? n('CalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', 'CalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', unscheduled, { placed: placed, removed: removed })
-					: t('CalPlan reconciled: {placed} placed, {removed} removed', { placed: placed, removed: removed }))
+					? n('SuperCalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', 'SuperCalPlan reconciled: {placed} placed, {removed} removed, {count} could not fit', unscheduled, { placed: placed, removed: removed })
+					: t('SuperCalPlan reconciled: {placed} placed, {removed} removed', { placed: placed, removed: removed }))
 			}).catch(function (error) {
-				notify(t('CalPlan reconcile failed: {error}', { error: error && error.message ? error.message : '' }), true)
+				notify(t('SuperCalPlan reconcile failed: {error}', { error: error && error.message ? error.message : '' }), true)
 			}).then(function () {
 				reconcileRunning = false
 				button.disabled = false
 				button.classList.remove('is-running')
-				label.textContent = t('Reconcile CalPlan')
+				label.textContent = t('Reconcile SuperCalPlan')
 			})
 		})
 		return button
@@ -836,8 +836,8 @@
 		var button = document.createElement('button')
 		button.type = 'button'
 		button.className = 'calplan-navigation-help'
-		button.setAttribute('aria-label', t('CalPlan help'))
-		button.setAttribute('title', t('CalPlan help'))
+		button.setAttribute('aria-label', t('SuperCalPlan help'))
+		button.setAttribute('title', t('SuperCalPlan help'))
 		button.textContent = '?'
 		button.addEventListener('click', function (event) {
 			event.preventDefault()
@@ -885,19 +885,19 @@
 			: ''
 		backdrop.innerHTML =
 			'<div class="calplan-help-dialog" role="dialog" aria-modal="true" aria-labelledby="calplanHelpTitle">' +
-			'  <div class="calplan-help-header"><h2 id="calplanHelpTitle">' + escapeHtml(t('CalPlan help')) + '</h2><button type="button" class="calplan-help-close" aria-label="' + escapeHtml(t('Close')) + '">×</button></div>' +
-			'  <p>' + t('<strong>CalPlan finds time for your Nextcloud tasks.</strong> Auto-schedule adds the standard <code>calplan</code> category and creates a derived locked event in the same calendar.') + '</p>' +
+			'  <div class="calplan-help-header"><h2 id="calplanHelpTitle">' + escapeHtml(t('SuperCalPlan help')) + '</h2><button type="button" class="calplan-help-close" aria-label="' + escapeHtml(t('Close')) + '">×</button></div>' +
+			'  <p>' + t('<strong>SuperCalPlan finds time for your Nextcloud tasks.</strong> Auto-schedule adds the standard <code>calplan</code> category and creates a derived locked event in the same calendar.') + '</p>' +
 			'  <p>' + t('On a task with subtasks, the switch turns Auto-schedule on or off for all its subtasks. While some of them are still to be scheduled or awaiting review, they get the blocks, not the parent; once they are all done, or none has Auto-schedule on, the parent is planned like any task. Its <strong>Daily limit</strong> caps the block time and/or the number of blocks per day for itself and all its subtasks together (limits of nested parents all apply).') + '</p>' +
-			'  <p>' + t('<strong>Split if needed</strong>: CalPlan fills the earliest free time with the task and splits it where it does not fit whole, in parts named “Title (1/2)”, “Title (2/2)”… (minimum part length in CalPlan settings, 30 minutes by default). On a task with subtasks it applies to all of them.') + '</p>' +
+			'  <p>' + t('<strong>Split if needed</strong>: SuperCalPlan fills the earliest free time with the task and splits it where it does not fit whole, in parts named “Title (1/2)”, “Title (2/2)”… (minimum part length in SuperCalPlan settings, 30 minutes by default). On a task with subtasks it applies to all of them.') + '</p>' +
 			'  <h3>' + escapeHtml(t('What Reconcile does')) + '</h3>' +
 			'  <p>' + t('Reconcile rereads your flagged tasks and busy calendar events, recomputes the current plan, writes new or changed task blocks, and removes blocks for completed, paused, or no-longer-fitting tasks. A block that has already started stays where it is.') + '</p>' +
-			'  <p>' + t('After a block ends and its pacing grace period passes, an incomplete task receives the filterable <code>calplan-review</code> tag — CalPlan’s <strong>“Is complete?”</strong> review marker. Depending on your setting, CalPlan either tries another time or removes Auto-schedule and pauses.') + '</p>' +
-			'  <p>' + t('Personal settings can completely exclude calendars or make ordinary events with selected titles stop counting as busy. CalPlan does nothing at all in an excluded calendar, including cleanup; title rules affect ordinary events only.') + '</p>' +
+			'  <p>' + t('After a block ends and its pacing grace period passes, an incomplete task receives the filterable <code>calplan-review</code> tag — SuperCalPlan’s <strong>“Is complete?”</strong> review marker. Depending on your setting, SuperCalPlan either tries another time or removes Auto-schedule and pauses.') + '</p>' +
+			'  <p>' + t('Personal settings can completely exclude calendars or make ordinary events with selected titles stop counting as busy. SuperCalPlan does nothing at all in an excluded calendar, including cleanup; title rules affect ordinary events only.') + '</p>' +
 			'  <h3>' + escapeHtml(t('Last Reconcile')) + '</h3><div class="calplan-last-run" aria-live="polite">' + escapeHtml(t('Loading…')) + '</div>' +
 			taskHelpers +
 			'  <h3>' + escapeHtml(t('Source of truth')) + '</h3>' +
-			'  <p>' + t('Edit the task, not the derived calendar block. Use a calendar that supports both tasks and events; a Tasks-only list cannot show CalPlan blocks. Tasks in a calendar someone shared with you are planned by its owner’s CalPlan. Automatic timed checks require Nextcloud background jobs; the Reconcile button always runs immediately.') + '</p>' +
-			'  <p><a class="calplan-help-settings" href="#">' + escapeHtml(t('Open CalPlan personal settings')) + '</a></p>' +
+			'  <p>' + t('Edit the task, not the derived calendar block. Use a calendar that supports both tasks and events; a Tasks-only list cannot show SuperCalPlan blocks. Tasks in a calendar someone shared with you are planned by its owner’s SuperCalPlan. Automatic timed checks require Nextcloud background jobs; the Reconcile button always runs immediately.') + '</p>' +
+			'  <p><a class="calplan-help-settings" href="#">' + escapeHtml(t('Open SuperCalPlan personal settings')) + '</a></p>' +
 			'</div>'
 		document.body.appendChild(backdrop)
 		var statusContainer = backdrop.querySelector('.calplan-last-run')
@@ -908,7 +908,7 @@
 		backdrop.addEventListener('click', function (event) { if (event.target === backdrop) close() })
 		backdrop.querySelector('.calplan-help-settings').addEventListener('click', function (event) {
 			event.preventDefault()
-			var url = window.OC && typeof OC.generateUrl === 'function' ? OC.generateUrl('/settings/user/calplan') : '/settings/user/calplan'
+			var url = window.OC && typeof OC.generateUrl === 'function' ? OC.generateUrl('/settings/user/supercalplan') : '/settings/user/supercalplan'
 			window.location.href = url
 		})
 		backdrop.addEventListener('keydown', function (event) { if (event.key === 'Escape') close() })
@@ -991,7 +991,7 @@
 			store.dispatch('setTags', { task: task, tags: flaggedTags(task, on) })
 			// The PUT re-plans on the server; then refresh the warnings.
 			whenTaskWritten(task, function (ok) {
-				if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
+				if (!ok) notify(t('SuperCalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
 				loadReconcileStatus().catch(function () {})
 			})
 			return
@@ -1008,7 +1008,7 @@
 						: n('Auto-schedule off for {count} subtask', 'Auto-schedule off for {count} subtasks', subtree.length))
 					refreshCalendarApp()
 				}).catch(function () {})
-				if (!ok) notify(t('CalPlan: some tasks could not be saved; reload them in Tasks and try again.'), true)
+				if (!ok) notify(t('SuperCalPlan: some tasks could not be saved; reload them in Tasks and try again.'), true)
 			})
 		})
 	}
@@ -1045,8 +1045,8 @@
 		switchEl.setAttribute('aria-label', t('Auto-schedule'))
 		row.querySelector('.content__name').textContent = t('Auto-schedule')
 		var help = row.querySelector('.calplan-help-button')
-		help.setAttribute('aria-label', t('CalPlan help'))
-		help.setAttribute('title', t('CalPlan help'))
+		help.setAttribute('aria-label', t('SuperCalPlan help'))
+		help.setAttribute('title', t('SuperCalPlan help'))
 		help.addEventListener('click', function (event) {
 			event.preventDefault()
 			event.stopPropagation()
@@ -1069,7 +1069,7 @@
 	 * estimated effort, independent of DTSTART/DUE), which IcalCodec reads
 	 * first. It edits the VTODO held by Tasks' own store and saves it through
 	 * Tasks' `updateTask` action, so etags stay consistent. The field shows the
-	 * length CalPlan schedules: ESTIMATED-DURATION, else the standard DURATION,
+	 * length SuperCalPlan schedules: ESTIMATED-DURATION, else the standard DURATION,
 	 * else a legacy `Duration:` notes line (removed on the next save).
 	 */
 	var ESTIMATE_PROP = 'estimated-duration'
@@ -1103,7 +1103,7 @@
 		return h ? t('{h}h', { h: h }) : t('{m}min', { m: m })
 	}
 
-	/** *note* without its first `Duration:` line - only when that line is a duration CalPlan reads. */
+	/** *note* without its first `Duration:` line - only when that line is a duration SuperCalPlan reads. */
 	function noteWithoutDuration(note) {
 		note = String(note || '')
 		if (noteDurationMinutes(note) <= 0) return note
@@ -1137,7 +1137,7 @@
 		return value == null ? null : String(value)
 	}
 
-	/** Block length in minutes CalPlan schedules (0 = personal default): ESTIMATED-DURATION, DURATION, then a notes line. */
+	/** Block length in minutes SuperCalPlan schedules (0 = personal default): ESTIMATED-DURATION, DURATION, then a notes line. */
 	function taskDurationMinutes(task) {
 		var estimate = isoDurationMinutes(propValue(task, ESTIMATE_PROP))
 		if (estimate > 0) return estimate
@@ -1383,7 +1383,7 @@
 				'</div>'
 		},
 		placeholders: function (row) {
-			row.title = t('When no single free slot fits this task, CalPlan fills the earliest free time with it and splits it where it does not fit whole, in parts named "Title (1/2)", "Title (2/2)"… (minimum part length in CalPlan settings). On a task with subtasks it applies to all of them.')
+			row.title = t('When no single free slot fits this task, SuperCalPlan fills the earliest free time with it and splits it where it does not fit whole, in parts named "Title (1/2)", "Title (2/2)"… (minimum part length in SuperCalPlan settings). On a task with subtasks it applies to all of them.')
 		},
 		setup: function (row) {
 			bindSwitch(row, row.querySelector('[role="switch"]'), function () {
@@ -1476,7 +1476,7 @@
 		}
 		// The PUT re-plans on the server; then refresh the warnings.
 		whenTaskWritten(task, function (ok) {
-			if (!ok) notify(t('CalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
+			if (!ok) notify(t('SuperCalPlan: the task could not be saved; reload it in Tasks and try again.'), true)
 			loadReconcileStatus().catch(function () {})
 		})
 	}
@@ -1516,7 +1516,7 @@
 
 	/**
 	 * Step a part by *delta*: time parts move the row's total and snap minute
-	 * steps to CalPlan's 15-minute grid (45 min + 15 = 1 h 0 min); a count
+	 * steps to SuperCalPlan's 15-minute grid (45 min + 15 = 1 h 0 min); a count
 	 * moves by one. An empty time starts from zero.
 	 */
 	function stepRow(row, spec, part, delta) {
@@ -1647,14 +1647,14 @@
 
 	// --- Driver ----------------------------------------------------------
 
-	// Elements CalPlan renders itself; changes inside them never need a pass.
+	// Elements SuperCalPlan renders itself; changes inside them never need a pass.
 	var OWN_UI = '.calplan-toggle-row, .calplan-duration-row, .calplan-split-row, .calplan-notice-row, .calplan-planned-row, .calplan-task-icon, .calplan-planned, .calplan-unscheduled-icon, .calplan-reconcile-item, .calplan-help-backdrop'
 
 	function isOwnMutation(record) {
 		var node = record.target
 		var el = node && (node.nodeType === 1 ? node : node.parentElement)
 		if (el && typeof el.closest === 'function' && el.closest(OWN_UI)) return true
-		// Inserting or removing one of CalPlan's own icons.
+		// Inserting or removing one of SuperCalPlan's own icons.
 		var changed = Array.prototype.slice.call(record.addedNodes || []).concat(Array.prototype.slice.call(record.removedNodes || []))
 		return changed.length > 0 && changed.every(function (child) {
 			return child.nodeType === 1 && typeof child.matches === 'function' && child.matches(OWN_UI)
@@ -1662,7 +1662,7 @@
 	}
 
 	function onMutate(records) {
-		// Safety net against feedback loops: a pass that only touched CalPlan's
+		// Safety net against feedback loops: a pass that only touched SuperCalPlan's
 		// own UI (e.g. a summary text) must not trigger another pass.
 		if (records && records.length > 0 && records.every(isOwnMutation)) return
 		scanTaskList(document)

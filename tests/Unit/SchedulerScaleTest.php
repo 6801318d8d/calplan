@@ -7,10 +7,10 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Service\SchedulerService;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Service\SchedulerService;
 
 class SchedulerScaleTest extends AutoScheduleTestCase {
 	private SchedulerService $scheduler;
@@ -35,7 +35,7 @@ class SchedulerScaleTest extends AutoScheduleTestCase {
 		$this->assertCount(60, $first);
 		$this->assertEquals($first, $second, 'Recomputing identical inputs must produce the same plan');
 		$this->assertLessThan(5_000.0, max($firstMs, $secondMs), 'Pure scheduling exceeded the broad regression budget');
-		fwrite(STDERR, sprintf("\nCalPlan scale: 60 tasks + 120 busy: first %.2f ms, recompute %.2f ms\n", $firstMs, $secondMs));
+		fwrite(STDERR, sprintf("\nSuperCalPlan scale: 60 tasks + 120 busy: first %.2f ms, recompute %.2f ms\n", $firstMs, $secondMs));
 	}
 
 	public function testHundredsOfTasksRemainBoundedAndReturnEveryCandidate(): void {
@@ -49,10 +49,10 @@ class SchedulerScaleTest extends AutoScheduleTestCase {
 
 		$this->assertCount(250, $placed);
 		$this->assertLessThan(5_000.0, $elapsedMs, 'Pure scheduling exceeded the broad regression budget');
-		fwrite(STDERR, sprintf("CalPlan scale: 250 tasks + 500 busy: %.2f ms\n", $elapsedMs));
+		fwrite(STDERR, sprintf("SuperCalPlan scale: 250 tasks + 500 busy: %.2f ms\n", $elapsedMs));
 	}
 
-	/** @return array<\OCA\AutoSchedule\Model\Task> */
+	/** @return array<\OCA\SuperCalPlan\Model\Task> */
 	private function tasks(int $count, \DateTimeImmutable $now): array {
 		$tasks = [];
 		for ($i = 0; $i < $count; $i++) {

@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Model;
+namespace OCA\SuperCalPlan\Model;
 
 /**
  * A VEVENT already on the calendar.
@@ -36,7 +36,7 @@ class CalendarEvent {
 	) {
 	}
 
-	/** The block key of an owned CalPlan block: its UID without the calplan- prefix. */
+	/** The block key of an owned SuperCalPlan block: its UID without the calplan- prefix. */
 	public function slotKey(): ?string {
 		return $this->autoScheduleTaskUid !== null && str_starts_with($this->uid, Defaults::SLOT_UID_PREFIX)
 			? substr($this->uid, strlen(Defaults::SLOT_UID_PREFIX))

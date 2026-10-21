@@ -9,11 +9,11 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/bootstrap.php';
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Model\WorkingDay;
-use OCA\AutoSchedule\Model\WorkingHours;
-use OCA\AutoSchedule\Service\SchedulerService;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Model\WorkingDay;
+use OCA\SuperCalPlan\Model\WorkingHours;
+use OCA\SuperCalPlan\Service\SchedulerService;
 
 $taskCount = max(1, (int)($argv[1] ?? 100));
 $eventCount = max(0, (int)($argv[2] ?? 500));
@@ -54,7 +54,7 @@ $percentile = static function (array $values, float $p): float {
 	return $values[$index];
 };
 printf(
-	"CalPlan scheduler benchmark: tasks=%d busy=%d iterations=%d min=%.2fms median=%.2fms p95=%.2fms max=%.2fms\n",
+	"SuperCalPlan scheduler benchmark: tasks=%d busy=%d iterations=%d min=%.2fms median=%.2fms p95=%.2fms max=%.2fms\n",
 	$taskCount,
 	$eventCount,
 	$iterations,

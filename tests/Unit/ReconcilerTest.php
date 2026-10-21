@@ -7,14 +7,14 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Reconciliation;
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Model\WorkingHours;
-use OCA\AutoSchedule\Service\Reconciler;
-use OCA\AutoSchedule\Service\SchedulerService;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Model\Reconciliation;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Model\WorkingHours;
+use OCA\SuperCalPlan\Service\Reconciler;
+use OCA\SuperCalPlan\Service\SchedulerService;
 
 class ReconcilerTest extends AutoScheduleTestCase {
 	private Reconciler $reconciler;
@@ -78,7 +78,7 @@ class ReconcilerTest extends AutoScheduleTestCase {
 
 	public function testSplitTaskReplacesItsWholeBlockWithNumberedParts(): void {
 		$now = $this->utc('2026-08-19 08:00:00');
-		$t = new \OCA\AutoSchedule\Model\Task(id: 'T', title: 'T', priority: 5, estimatedMinutes: 360, autoSchedule: true, canSplit: true);
+		$t = new \OCA\SuperCalPlan\Model\Task(id: 'T', title: 'T', priority: 5, estimatedMinutes: 360, autoSchedule: true, canSplit: true);
 		$whole = new CalendarEvent('calplan-T', $this->utc('2026-08-19 09:00:00'), $this->utc('2026-08-19 15:00:00'), 'T');
 		$recon = $this->reconcile([$t], $this->allWeek(), [$whole], $now);
 		$this->assertSame(['T'], $recon->toDelete);

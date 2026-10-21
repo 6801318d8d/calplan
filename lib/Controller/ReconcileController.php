@@ -14,10 +14,10 @@ declare(strict_types=1);
  * without waiting for cron.
  */
 
-namespace OCA\AutoSchedule\Controller;
+namespace OCA\SuperCalPlan\Controller;
 
-use OCA\AutoSchedule\Service\ConfigService;
-use OCA\AutoSchedule\Service\ReconcileService;
+use OCA\SuperCalPlan\Service\ConfigService;
+use OCA\SuperCalPlan\Service\ReconcileService;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\DataResponse;
@@ -95,7 +95,7 @@ class ReconcileController extends OCSController {
 			'unscheduledTasks' => (object)$this->configService->getUnscheduledTasks($uid),
 			// Task UID => {uri, blocks}: when the Tasks UI says a task is planned.
 			'plannedTasks' => (object)$this->configService->getPlannedTasks($uid),
-			// Task UID => {uri, at}: tasks CalPlan rewrote, which an open Tasks page reloads.
+			// Task UID => {uri, at}: tasks SuperCalPlan rewrote, which an open Tasks page reloads.
 			'rewrittenTasks' => (object)$this->configService->getRewrittenTasks($uid, time()),
 		]);
 	}

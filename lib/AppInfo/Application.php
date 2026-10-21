@@ -6,15 +6,15 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Nextcloud contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * CalPlan — places flagged tasks (CATEGORIES:calplan) into the
+ * SuperCalPlan — places flagged tasks (CATEGORIES:calplan) into the
  * earliest free working-hours slot on the user's calendar, respecting each
  * task's start and due dates. Runs as a Nextcloud background job on cron.
  */
 
-namespace OCA\AutoSchedule\AppInfo;
+namespace OCA\SuperCalPlan\AppInfo;
 
-use OCA\AutoSchedule\Listener\CalendarObjectChangeListener;
-use OCA\AutoSchedule\Listener\UserDeletedListener;
+use OCA\SuperCalPlan\Listener\CalendarObjectChangeListener;
+use OCA\SuperCalPlan\Listener\UserDeletedListener;
 use OCP\App\IAppManager;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -30,7 +30,7 @@ use OCP\IUserSession;
 use OCP\User\Events\UserDeletedEvent;
 
 class Application extends App implements IBootstrap {
-	public const APP_ID = 'calplan';
+	public const APP_ID = 'supercalplan';
 
 	public function __construct(array $urlParams = []) {
 		parent::__construct(self::APP_ID, $urlParams);
@@ -44,7 +44,7 @@ class Application extends App implements IBootstrap {
 
 		// Re-plan on local VTODO and VEVENT changes, once per user at the end of
 		// the request (the listener filters these broad public OCP events by
-		// object component, skips CalPlan's own blocks, and skips users with
+		// object component, skips SuperCalPlan's own blocks, and skips users with
 		// nothing to plan). Task edits and busy-time changes thus move blocks
 		// before the client gets its answer.
 		$context->registerEventListener(CalendarObjectCreatedEvent::class, CalendarObjectChangeListener::class);
@@ -63,7 +63,7 @@ class Application extends App implements IBootstrap {
 	public function boot(IBootContext $context): void {
 		// Inject the frontend only into Tasks and Calendar, for a logged-in user
 		// the app is enabled for (public calendar pages, /p/ and /embed/, have
-		// no CalPlan to talk to). Their navigation action uses Nextcloud's shared
+		// no SuperCalPlan to talk to). Their navigation action uses Nextcloud's shared
 		// #app-navigation-vue structure, which is also present in Files and
 		// Settings; global asset loading would therefore leak the action into
 		// unrelated apps. The script repeats this route guard client-side as a
@@ -82,8 +82,8 @@ class Application extends App implements IBootstrap {
 			if ($user === null || !$appManager->isEnabledForUser(self::APP_ID, $user)) {
 				return;
 			}
-			\OCP\Util::addScript(self::APP_ID, 'calplan-tasks');
-			\OCP\Util::addStyle(self::APP_ID, 'calplan-tasks');
+			\OCP\Util::addScript(self::APP_ID, 'supercalplan-tasks');
+			\OCP\Util::addStyle(self::APP_ID, 'supercalplan-tasks');
 		});
 	}
 }

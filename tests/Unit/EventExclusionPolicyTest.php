@@ -7,11 +7,11 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Service\EventExclusionPolicy;
-use OCA\AutoSchedule\Service\ReconcileService;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Service\EventExclusionPolicy;
+use OCA\SuperCalPlan\Service\ReconcileService;
 
 class EventExclusionPolicyTest extends AutoScheduleTestCase {
 	private function event(?string $summary, ?string $taskUid = null): CalendarEvent {

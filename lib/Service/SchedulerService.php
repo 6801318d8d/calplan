@@ -14,14 +14,14 @@ declare(strict_types=1);
  * deterministic, and idempotent.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\PlacementResult;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\PlacementResult;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Model\WorkingHours;
 
 class SchedulerService {
 	/** Whole calendar days, in the user's timezone (*now*'s), from today to the task's due day; far-future if none. */

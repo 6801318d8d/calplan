@@ -7,9 +7,9 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Listener;
+namespace OCA\SuperCalPlan\Listener;
 
-use OCA\AutoSchedule\Service\BehavioralHistoryService;
+use OCA\SuperCalPlan\Service\BehavioralHistoryService;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\User\Events\UserDeletedEvent;
@@ -35,7 +35,7 @@ class UserDeletedListener implements IEventListener {
 		try {
 			$this->history->delete($event->getUser()->getUID());
 		} catch (\Throwable $e) {
-			$this->logger->warning('CalPlan could not delete the history of a deleted user', ['app' => 'calplan', 'exception' => $e]);
+			$this->logger->warning('SuperCalPlan could not delete the history of a deleted user', ['app' => 'supercalplan', 'exception' => $e]);
 		}
 	}
 }

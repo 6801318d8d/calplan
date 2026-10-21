@@ -7,10 +7,10 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Service\IcalCodec;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Service\IcalCodec;
 use PHPUnit\Framework\TestCase;
 
 /**

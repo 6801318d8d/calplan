@@ -7,10 +7,10 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Tests\Unit;
+namespace OCA\SuperCalPlan\Tests\Unit;
 
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Service\ReconcileService;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Service\ReconcileService;
 
 class ReviewPolicyTest extends AutoScheduleTestCase {
 	public function testAutoRescheduleAddsReviewAndPreservesScheduleAndUserTags(): void {

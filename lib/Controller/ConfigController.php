@@ -10,14 +10,14 @@ declare(strict_types=1);
  * auto-schedule toggle (a comma-list of calendar URIs) and the working-hours
  * definition, both stored per-user via OCP\IConfig (no schema). Routes are
  * declared in appinfo/routes.php under the 'ocs' key (mounted at
- * /ocs/v2.php/apps/calplan/api/v1/...); the controller just implements
+ * /ocs/v2.php/apps/supercalplan/api/v1/...); the controller just implements
  * the methods. Extends OCP\AppFramework\OCSController.
  */
 
-namespace OCA\AutoSchedule\Controller;
+namespace OCA\SuperCalPlan\Controller;
 
-use OCA\AutoSchedule\Service\ConfigService;
-use OCA\AutoSchedule\Service\WorkingHoursService;
+use OCA\SuperCalPlan\Service\ConfigService;
+use OCA\SuperCalPlan\Service\WorkingHoursService;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\DataResponse;

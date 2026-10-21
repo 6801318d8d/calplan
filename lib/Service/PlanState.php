@@ -7,12 +7,12 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\WorkingHours;
 
 /**
  * The state of one scheduling pass (SchedulerService::scheduleDetailed): the

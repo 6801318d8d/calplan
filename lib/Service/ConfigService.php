@@ -14,11 +14,11 @@ declare(strict_types=1);
  *    block time already spent today
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\AppInfo\Application;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\AppInfo\Application;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\WorkingHours;
 use OCP\Config\IUserConfig;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
@@ -67,7 +67,7 @@ class ConfigService {
 	public const DEFAULT_DURATION_MAX = 480;
 	/** Longest a client may hold back the per-write re-plans (see holdReplans). */
 	public const REPLAN_HOLD_SECONDS = 120;
-	/** How long the Tasks page is told about a task CalPlan rewrote, so it can reload it. */
+	/** How long the Tasks page is told about a task SuperCalPlan rewrote, so it can reload it. */
 	private const REWRITTEN_TTL_SECONDS = 3600;
 
 	public function __construct(
@@ -98,7 +98,7 @@ class ConfigService {
 		$this->config->setUserValue($userId, Application::APP_ID, self::KEY_FLAGGED_CALENDARS, implode(',', $uris));
 	}
 
-	/** @return string[] calendar URIs CalPlan must not read or modify */
+	/** @return string[] calendar URIs SuperCalPlan must not read or modify */
 	public function getIgnoredCalendars(string $userId): array {
 		$decoded = json_decode($this->config->getUserValue($userId, Application::APP_ID, self::KEY_IGNORED_CALENDARS, '[]'), true);
 		return is_array($decoded) ? self::cleanStrings($decoded) : [];
@@ -145,7 +145,7 @@ class ConfigService {
 	}
 
 	/**
-	 * The working hours CalPlan plans in: those saved in CalPlan's settings,
+	 * The working hours SuperCalPlan plans in: those saved in SuperCalPlan's settings,
 	 * else the user's Nextcloud availability (Personal settings ->
 	 * Availability), else 09:00-17:00 every day.
 	 */
@@ -219,15 +219,15 @@ class ConfigService {
 		}
 	}
 
-	/** Where getWorkingHours() reads from: 'calplan' (saved in CalPlan settings), 'availability' (Nextcloud's), or 'default'. */
+	/** Where getWorkingHours() reads from: 'app' (saved in SuperCalPlan settings), 'availability' (Nextcloud's), or 'default'. */
 	public function getWorkingHoursSource(string $userId): string {
 		if ($this->storedWorkingHours($userId) !== null) {
-			return 'calplan';
+			return 'app';
 		}
 		return $this->availabilityWorkingHours($userId) !== null ? 'availability' : 'default';
 	}
 
-	/** @return array<string, array{start: string, end: string}>|null a valid, non-empty `working_hours` map saved in CalPlan */
+	/** @return array<string, array{start: string, end: string}>|null a valid, non-empty `working_hours` map saved in SuperCalPlan */
 	private function storedWorkingHours(string $userId): ?array {
 		$json = $this->config->getUserValue($userId, Application::APP_ID, self::KEY_WORKING_HOURS, '');
 		if ($json === '') {
@@ -254,7 +254,7 @@ class ConfigService {
 			$value = $properties !== [] ? (string)$properties[0]->getPropertyvalue() : '';
 			return $value !== '' ? WorkingHoursService::fromAvailability($value) : null;
 		} catch (\Throwable $e) {
-			$this->logger?->warning('CalPlan could not read the Nextcloud availability', ['app' => 'calplan', 'exception' => $e]);
+			$this->logger?->warning('SuperCalPlan could not read the Nextcloud availability', ['app' => 'supercalplan', 'exception' => $e]);
 			return null;
 		}
 	}
@@ -270,7 +270,7 @@ class ConfigService {
 		return in_array($value, self::MIN_PART_CHOICES, true) ? $value : Defaults::MIN_PART_MINUTES;
 	}
 
-	/** How many days ahead CalPlan plans (the scheduling horizon). */
+	/** How many days ahead SuperCalPlan plans (the scheduling horizon). */
 	public function getPlanningDays(string $userId): int {
 		return $this->boundedUserInt($userId, self::KEY_PLANNING_DAYS, Defaults::LOOKAHEAD_DAYS, Defaults::MIN_PLANNING_DAYS, Defaults::MAX_PLANNING_DAYS);
 	}
@@ -400,7 +400,7 @@ class ConfigService {
 	}
 
 	/**
-	 * Block time already spent today by blocks CalPlan removed or moved
+	 * Block time already spent today by blocks SuperCalPlan removed or moved
 	 * (completed tasks, reviewed ones): it still counts against today's limits.
 	 *
 	 * @return list<array{task: string, day: string, minutes: int}>
@@ -442,7 +442,7 @@ class ConfigService {
 	}
 
 	/**
-	 * Tasks CalPlan rewrote (review categories) in the last hour, by UID, with
+	 * Tasks SuperCalPlan rewrote (review categories) in the last hour, by UID, with
 	 * their object URI and when: an open Tasks page reloads them, so that its
 	 * next save of such a task is not refused as a conflict.
 	 *
@@ -593,7 +593,7 @@ class ConfigService {
 			try {
 				$candidates[] = (string)\OCP\Server::get(\OCA\DAV\CalDAV\TimezoneService::class)->getUserTimezone($userId);
 			} catch (\Throwable $e) {
-				$this->logger?->debug('CalPlan could not read the user timezone from DAV', ['app' => 'calplan', 'exception' => $e]);
+				$this->logger?->debug('SuperCalPlan could not read the user timezone from DAV', ['app' => 'supercalplan', 'exception' => $e]);
 			}
 		}
 		$candidates[] = $this->config->getSystemValueString('default_timezone', '');

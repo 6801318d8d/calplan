@@ -7,13 +7,13 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Settings;
+namespace OCA\SuperCalPlan\Settings;
 
-use OCA\AutoSchedule\AppInfo\Application;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Service\ConfigService;
-use OCA\AutoSchedule\Service\CalendarRepository;
-use OCA\AutoSchedule\Service\WorkingHoursService;
+use OCA\SuperCalPlan\AppInfo\Application;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Service\ConfigService;
+use OCA\SuperCalPlan\Service\CalendarRepository;
+use OCA\SuperCalPlan\Service\WorkingHoursService;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IUserSession;
 use OCP\Settings\ISettings;
@@ -28,8 +28,8 @@ class Personal implements ISettings {
 	}
 
 	public function getForm(): TemplateResponse {
-		Util::addScript(Application::APP_ID, 'calplan-settings');
-		Util::addStyle(Application::APP_ID, 'calplan-settings');
+		Util::addScript(Application::APP_ID, 'supercalplan-settings');
+		Util::addStyle(Application::APP_ID, 'supercalplan-settings');
 		$user = $this->userSession->getUser();
 		$uid = $user?->getUID() ?? '';
 		$policy = $this->config->getSchedulingPolicy($uid);
@@ -84,7 +84,7 @@ class Personal implements ISettings {
 	}
 
 	public function getSection(): string {
-		return 'calplan';
+		return Application::APP_ID;
 	}
 
 	public function getPriority(): int {

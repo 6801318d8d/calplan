@@ -7,7 +7,7 @@ declare(strict_types=1);
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-namespace OCA\AutoSchedule\Model;
+namespace OCA\SuperCalPlan\Model;
 
 /**
  * A VTODO task the scheduler may place on the calendar.
@@ -226,7 +226,7 @@ class Task {
 
 	/**
 	 * Categories after an expired-slot review transition. Unrelated user tags are
-	 * preserved. Disabled automatic rescheduling removes only CalPlan's schedule
+	 * preserved. Disabled automatic rescheduling removes only SuperCalPlan's schedule
 	 * category; the review category remains filterable until the user removes it.
 	 *
 	 * @return string[]

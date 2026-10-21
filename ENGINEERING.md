@@ -1,4 +1,4 @@
-# CalPlan engineering notes
+# SuperCalPlan engineering notes
 
 This document describes the current implementation. The README is intentionally
 user-facing; this file records the architecture, scheduling model, storage, and
@@ -6,7 +6,7 @@ known technical constraints.
 
 ## System model
 
-CalPlan is a native Nextcloud app. It does not patch the Tasks or Calendar apps.
+SuperCalPlan is a native Nextcloud app. It does not patch the Tasks or Calendar apps.
 
 - A task is a CalDAV `VTODO`.
 - A task is selected for scheduling with the standard `CATEGORIES:calplan` value
@@ -98,7 +98,7 @@ birthday-calendar sync into one re-plan instead of one per object. The response
 still waits for the re-plan, so a client reading the plan after its write sees
 the new one.
 
-The listener skips CalPlan's own writes and blocks, users the app is not enabled
+The listener skips SuperCalPlan's own writes and blocks, users the app is not enabled
 for, users whose last reconcile had nothing to plan (unless the task carries
 `calplan`), users whose client holds the re-plans back (`POST
 /reconcile/hold`, used by a parent's Auto-schedule switch before it writes
@@ -117,25 +117,25 @@ plan or review and never waits for a run in progress. Background runs that
 changed nothing are not recorded in the ten diagnostics entries.
 
 ```text
-POST /ocs/v2.php/apps/calplan/api/v1/reconcile
-GET  /ocs/v2.php/apps/calplan/api/v1/reconcile/status
-POST /ocs/v2.php/apps/calplan/api/v1/reconcile/hold
+POST /ocs/v2.php/apps/supercalplan/api/v1/reconcile
+GET  /ocs/v2.php/apps/supercalplan/api/v1/reconcile/status
+POST /ocs/v2.php/apps/supercalplan/api/v1/reconcile/hold
 ```
 
 Runs of one user never overlap (an exclusive lock through Nextcloud's locking
 provider; a run waits up to 30 s, cron does not wait). Once it holds the lock, a
-run rereads the user's CalPlan values, so a run that waited sees what the one
+run rereads the user's SuperCalPlan values, so a run that waited sees what the one
 before it stored.
 
 ## Calendar reads
 
 - Tasks: every `VTODO` of the user's **own** calendars. A calendar shared with
-  the user is planned by its owner's CalPlan, never by the sharee's.
+  the user is planned by its owner's SuperCalPlan, never by the sharee's.
 - Busy time: ordinary events of the user's own and shared calendars, of
   subscriptions and of federated calendars, one day behind now through the end
   of the planning window (7–90 days). The birthday calendar is skipped (its
   events are transparent).
-- Every CalPlan-owned event of the user's own calendars, including those
+- Every SuperCalPlan-owned event of the user's own calendars, including those
   outside the window, so cleanup still works.
 
 All-day and floating times are read in the user's timezone. Recurring events are
@@ -143,7 +143,7 @@ expanded inside the window, with a recurrence limit high enough for old daily
 series. An event with `DURATION` instead of `DTEND` lasts that long; an all-day
 event without `DTEND` lasts a day. An object that cannot be parsed is skipped.
 
-`TRANSP:TRANSPARENT` events, events lasting no time and CalPlan-owned slots are
+`TRANSP:TRANSPARENT` events, events lasting no time and SuperCalPlan-owned slots are
 removed from busy input. Title exclusions are applied only to ordinary events.
 
 A task's blocks go into its own calendar. A calendar that holds only tasks
@@ -234,7 +234,7 @@ events, then produces puts, deletes, unchanged objects, and unscheduled outcomes
 
 ## Scheduling research
 
-CalPlan borrows ideas from classical single-machine scheduling, but its combined
+SuperCalPlan borrows ideas from classical single-machine scheduling, but its combined
 policy is a product heuristic rather than a published optimal algorithm.
 
 ### Earliest deadline first
@@ -247,13 +247,13 @@ a standard reference:
   a Hard-Real-Time Environment,” *Journal of the ACM* 20(1), 1973.
   DOI: `10.1145/321738.321743`.
 
-CalPlan is not a preemptive real-time EDF scheduler. It uses a deadline-influenced
+SuperCalPlan is not a preemptive real-time EDF scheduler. It uses a deadline-influenced
 score, modified by task priority, within hard urgency tiers.
 
 ### Shortest processing time
 
 Shortest-processing-time ordering is a classical rule for reducing average
-completion time. CalPlan uses duration only as the final tiebreaker, so it does
+completion time. SuperCalPlan uses duration only as the final tiebreaker, so it does
 not let a stream of short tasks override missed deadlines or stronger deadline/
 priority scores.
 
@@ -268,7 +268,7 @@ the Moore–Hodgson algorithm; the primary paper cited here is Moore's:
   the Number of Late Jobs,” *Management Science* 15(1), 1968.
   DOI: `10.1287/mnsc.15.1.102`.
 
-CalPlan does **not** implement the exact Moore–Hodgson algorithm: it does not
+SuperCalPlan does **not** implement the exact Moore–Hodgson algorithm: it does not
 construct an earliest-due-date sequence and eject the longest late job. Its
 future-DUE rule and overdue/no-due rollover policy are inspired by the same
 on-time-versus-late-job distinction, adapted to calendar availability, release
@@ -278,7 +278,7 @@ times, priorities, user limits, and existing busy intervals.
 
 The practical problem includes release times, deadlines, variable durations,
 calendar holes, multiple daily capacities, per-task windows, and user policy.
-CalPlan chooses a predictable greedy plan rather than claiming exact global
+SuperCalPlan chooses a predictable greedy plan rather than claiming exact global
 optimality. The pure scheduling cost is roughly task sorting plus task-by-slot
 search; in practice CalDAV reads and writes dominate runtime.
 
@@ -309,7 +309,7 @@ Per-user state is stored with Nextcloud's standard `OCP\IConfig` user values:
 - ignored calendars and event-title rules;
 - history consent and retention;
 - the latest ten aggregate reconcile diagnostics;
-- the last run's unscheduled tasks and planned blocks, tasks CalPlan rewrote in
+- the last run's unscheduled tasks and planned blocks, tasks SuperCalPlan rewrote in
   the last hour (for the Tasks page to reload), today's spent block time, and
   a re-plan hold.
 
@@ -322,7 +322,7 @@ and before an export, and a deleted account's history is deleted with it.
 
 ## Frontend integration
 
-`Application::boot()` loads CalPlan's script and styles only on Tasks and Calendar
+`Application::boot()` loads SuperCalPlan's script and styles only on Tasks and Calendar
 routes (not their public pages), for logged-in users the app is enabled for. The
 script adds:
 
@@ -359,8 +359,8 @@ Nextcloud app-management icon discovery uses `img/app.svg` and
 | `lib/Service/BehavioralHistoryService.php` | Optional privacy-minimal observations |
 | `lib/Listener/CalendarObjectChangeListener.php` | Immediate task and event trigger |
 | `lib/BackgroundJob/ReconcileJob.php` | Periodic reconcile and review trigger |
-| `js/calplan-tasks.js` | Tasks/Calendar runtime integration |
-| `js/calplan-settings.js` | Personal settings page |
+| `js/supercalplan-tasks.js` | Tasks/Calendar runtime integration |
+| `js/supercalplan-settings.js` | Personal settings page |
 
 ## Testing and packaging
 

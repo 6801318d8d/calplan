@@ -17,17 +17,17 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	data-min-part="<?php p($_['minPartMinutes']); ?>"
 	data-history-enabled="<?php p($_['enabled'] ? '1' : '0'); ?>"
 	data-history-retention="<?php p($_['retentionDays']); ?>">
-	<h2>CalPlan</h2>
-	<p class="settings-hint"><?php p($l->t('Choose how much work CalPlan schedules and how much breathing room it leaves.')); ?></p>
+	<h2>SuperCalPlan</h2>
+	<p class="settings-hint"><?php p($l->t('Choose how much work SuperCalPlan schedules and how much breathing room it leaves.')); ?></p>
 
 	<details class="calplan-settings-group" open>
 		<summary><?php p($l->t('Working hours')); ?></summary>
 		<div class="calplan-settings-group__content">
-	<p class="settings-hint"><?php p($l->t('CalPlan places task blocks inside these hours; unchecked days get no blocks. A task whose start time you set outside them, on a checked day, may also use the rest of that day. An end of 00:00 means midnight.')); ?></p>
-	<?php if ($_['workingHoursSource'] !== 'calplan'): ?>
+	<p class="settings-hint"><?php p($l->t('SuperCalPlan places task blocks inside these hours; unchecked days get no blocks. A task whose start time you set outside them, on a checked day, may also use the rest of that day. An end of 00:00 means midnight.')); ?></p>
+	<?php if ($_['workingHoursSource'] !== 'app'): ?>
 		<p class="settings-hint" id="calplan-working-hours-source"><?php p($_['workingHoursSource'] === 'availability'
-			? $l->t('Not saved yet: CalPlan is using your Nextcloud availability (Personal settings → Availability), one window per day.')
-			: $l->t('Not saved yet: CalPlan is using its default, 09:00–17:00 every day.')); ?></p>
+			? $l->t('Not saved yet: SuperCalPlan is using your Nextcloud availability (Personal settings → Availability), one window per day.')
+			: $l->t('Not saved yet: SuperCalPlan is using its default, 09:00–17:00 every day.')); ?></p>
 	<?php endif; ?>
 	<div class="calplan-working-hours" role="group" aria-label="<?php p($l->t('Working hours')); ?>">
 		<?php
@@ -67,7 +67,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	<div class="calplan-setting-row">
 		<label for="calplan-planning-days"><?php p($l->t('Planning window')); ?></label>
 		<div><input id="calplan-planning-days" type="number" required min="<?php p($_['planningDaysMin']); ?>" max="<?php p($_['planningDaysMax']); ?>" step="1"> <?php p($l->t('days ahead')); ?></div>
-		<p class="settings-hint"><?php p($l->t('CalPlan places blocks only within this many days from today; tasks beyond it are planned as the days pass. A longer window plans further ahead, but each change re-plans more of your calendar.')); ?></p>
+		<p class="settings-hint"><?php p($l->t('SuperCalPlan places blocks only within this many days from today; tasks beyond it are planned as the days pass. A longer window plans further ahead, but each change re-plans more of your calendar.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-min-part"><?php p($l->t('Minimum part when splitting')); ?></label>
@@ -76,7 +76,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 				<option value="<?php p($minutes); ?>"><?php p($minutesLabel($minutes)); ?></option>
 			<?php endforeach; ?>
 		</select>
-		<p class="settings-hint"><?php p($l->t('For tasks with “Split if needed”: CalPlan fills the earliest free time and splits a task where it does not fit whole, in parts at least this long. Shorter parts fill each day up to its limits; longer ones keep tasks less fragmented.')); ?></p>
+		<p class="settings-hint"><?php p($l->t('For tasks with “Split if needed”: SuperCalPlan fills the earliest free time and splits a task where it does not fit whole, in parts at least this long. Shorter parts fill each day up to its limits; longer ones keep tasks less fragmented.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-daily-cap"><?php p($l->t('Maximum task time per day')); ?></label>
@@ -93,7 +93,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 		<p class="settings-hint"><?php p($l->t('Used only when a task has no duration: none set in the Tasks sidebar Duration field, no iCalendar DURATION and no Duration: line in its notes.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
-		<label for="calplan-task-gap"><?php p($l->t('Recovery time between CalPlan tasks')); ?></label>
+		<label for="calplan-task-gap"><?php p($l->t('Recovery time between SuperCalPlan tasks')); ?></label>
 		<select id="calplan-task-gap">
 			<?php foreach ($_['gapChoices'] as $minutes): ?>
 				<option value="<?php p($minutes); ?>"><?php p($minutesLabel($minutes)); ?></option>
@@ -127,9 +127,9 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	<details class="calplan-settings-group">
 		<summary><?php p($l->t('Calendar and event exclusions')); ?></summary>
 		<div class="calplan-settings-group__content">
-	<p class="settings-hint"><?php p($l->t('These exclusions change what counts as busy and where CalPlan is allowed to work. CalPlan plans and writes only in your own calendars; the events of calendars shared with you, subscriptions and federated calendars count as busy time.')); ?></p>
+	<p class="settings-hint"><?php p($l->t('These exclusions change what counts as busy and where SuperCalPlan is allowed to work. SuperCalPlan plans and writes only in your own calendars; the events of calendars shared with you, subscriptions and federated calendars count as busy time.')); ?></p>
 	<div class="calplan-warning" role="note">
-		<strong><?php p($l->t('Ignored calendars are completely outside CalPlan.')); ?></strong> <?php p($l->t('Reconcile will not read their tasks or events and will not create, update, review, or remove blocks there. Existing calplan tags and blocks are left untouched until you stop ignoring the calendar.')); ?>
+		<strong><?php p($l->t('Ignored calendars are completely outside SuperCalPlan.')); ?></strong> <?php p($l->t('Reconcile will not read their tasks or events and will not create, update, review, or remove blocks there. Existing calplan tags and blocks are left untouched until you stop ignoring the calendar.')); ?>
 	</div>
 	<fieldset class="calplan-calendar-exclusions">
 		<legend><?php p($l->t('Completely ignore these calendars')); ?></legend>
@@ -147,7 +147,7 @@ $minutesLabel = fn (int $minutes): string => $l->n('%n minute', '%n minutes', $m
 	<div class="calplan-setting-row">
 		<label for="calplan-ignored-event-titles"><?php p($l->t('Ignore ordinary calendar events with these titles')); ?></label>
 		<textarea id="calplan-ignored-event-titles" rows="5" placeholder="Busy&#10;Booking hold"><?php p(implode("\n", $_['ignoredEventTitles'])); ?></textarea>
-		<p class="settings-hint"><?php p($l->t('One title per line. Matching is case-insensitive. Only ordinary events are ignored as busy time; task titles and CalPlan’s own blocks are never filtered.')); ?></p>
+		<p class="settings-hint"><?php p($l->t('One title per line. Matching is case-insensitive. Only ordinary events are ignored as busy time; task titles and SuperCalPlan’s own blocks are never filtered.')); ?></p>
 	</div>
 	<div class="calplan-setting-row">
 		<label for="calplan-event-title-match-mode"><?php p($l->t('Title matching')); ?></label>

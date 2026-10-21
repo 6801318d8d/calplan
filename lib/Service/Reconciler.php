@@ -12,16 +12,16 @@ declare(strict_types=1);
  * on every cron tick.
  */
 
-namespace OCA\AutoSchedule\Service;
+namespace OCA\SuperCalPlan\Service;
 
-use OCA\AutoSchedule\Model\BusyBlock;
-use OCA\AutoSchedule\Model\CalendarEvent;
-use OCA\AutoSchedule\Model\Defaults;
-use OCA\AutoSchedule\Model\PlacementResult;
-use OCA\AutoSchedule\Model\Reconciliation;
-use OCA\AutoSchedule\Model\Slot;
-use OCA\AutoSchedule\Model\Task;
-use OCA\AutoSchedule\Model\WorkingHours;
+use OCA\SuperCalPlan\Model\BusyBlock;
+use OCA\SuperCalPlan\Model\CalendarEvent;
+use OCA\SuperCalPlan\Model\Defaults;
+use OCA\SuperCalPlan\Model\PlacementResult;
+use OCA\SuperCalPlan\Model\Reconciliation;
+use OCA\SuperCalPlan\Model\Slot;
+use OCA\SuperCalPlan\Model\Task;
+use OCA\SuperCalPlan\Model\WorkingHours;
 
 class Reconciler {
 	public function __construct(
@@ -108,7 +108,7 @@ class Reconciler {
 
 	/**
 	 * The first moment of *block* that a real event (opaque, not one of
-	 * CalPlan's blocks) takes, or null when none overlaps it. A started block
+	 * SuperCalPlan's blocks) takes, or null when none overlaps it. A started block
 	 * an event took did not happen as planned.
 	 *
 	 * @param CalendarEvent[] $events
