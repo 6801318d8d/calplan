@@ -1,14 +1,37 @@
 # Changelog
 
-All notable changes to CalPlan are documented here. The format is based on
+All notable changes to SuperCalPlan are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-**Release status:** 0.9.11 is the first version published as a standalone source
-repository and Git tag. Version 0.9.12 is the `v0.9.11_1` correctness hotfix.
-The Nextcloud App Store release is still pending signing certificate approval.
-Versions 0.1.0 through 0.9.10 were internal development milestones and were not
-public App Store releases.
+SuperCalPlan is a fork of [CalPlan](https://github.com/corbin-auriti/calplan).
+The entries from 0.9.12 down are CalPlan's, kept as CalPlan published them.
+
+## SuperCalPlan 1.0.0 — 2026-10-21
+
+First release of the fork, based on CalPlan 0.9.12 (commit `75e05b2`). The
+fixes and features are described in the README ("Differences from CalPlan");
+each is one commit.
+
+### Changed
+- Renamed: app id `supercalplan`, name SuperCalPlan, PHP namespace
+  `OCA\SuperCalPlan`, API under `/ocs/v2.php/apps/supercalplan/`, settings
+  section `/settings/user/supercalplan`. Task and block data are unchanged
+  (`calplan` tags, `calplan-<uid>` blocks, `X-CALPLAN-*` properties).
+
+### Added
+- Duration field, Working hours and Planning window settings, re-planning when
+  an ordinary event changes, task trees, not-scheduled warnings, per-task daily
+  limits, Split if needed, planned times in Tasks.
+- On install, each user's CalPlan settings are copied to SuperCalPlan.
+- SuperCalPlan stays idle for a user CalPlan is enabled for; Reconcile answers
+  409 and the settings page explains why.
+
+### Fixed
+- Recurring events counted only once as busy time; overlapping blocks across
+  calendars; time zones; started blocks; shared and subscribed calendars;
+  working-hours fallback; scheduling history; settings and Tasks page bugs;
+  three broken tests.
 
 ## 0.9.12 — 2026-08-26
 
